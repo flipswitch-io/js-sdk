@@ -1,0 +1,68 @@
+{
+  "name": "@flipswitch/sdk",
+  "version": "0.1.0",
+  "description": "Flipswitch SDK with real-time SSE support for OpenFeature",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "demo": "tsx examples/demo.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "feature-flags",
+    "openfeature",
+    "flipswitch",
+    "sse",
+    "real-time"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@openfeature/core": "^1.6.0",
+    "@openfeature/ofrep-core": "^2.0.0"
+  },
+  "peerDependencies": {
+    "@openfeature/server-sdk": "^1.0.0 || ^2.0.0",
+    "@openfeature/web-sdk": "^1.0.0 || ^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@openfeature/server-sdk": {
+      "optional": true
+    },
+    "@openfeature/web-sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@openfeature/ofrep-provider": "^0.2.2",
+    "@openfeature/ofrep-web-provider": "^0.3.5",
+    "@openfeature/server-sdk": "^1.17.0",
+    "@openfeature/web-sdk": "^1.7.2",
+    "@types/node": "^20.11.0",
+    "eslint": "^8.56.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
