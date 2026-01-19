@@ -27,12 +27,6 @@ export interface FlipswitchOptions {
    * Useful for testing or custom networking needs.
    */
   fetchImplementation?: typeof fetch;
-
-  /**
-   * Polling interval in milliseconds when SSE is not enabled or unavailable.
-   * @default 30000 (30 seconds)
-   */
-  pollingInterval?: number;
 }
 
 /**

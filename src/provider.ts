@@ -1,13 +1,11 @@
 import type {
   EvaluationContext,
   JsonValue,
-  Logger,
   ProviderMetadata,
   ResolutionDetails,
 } from '@openfeature/core';
-import { ErrorCode } from '@openfeature/core';
+import { OFREPWebProvider } from '@openfeature/ofrep-web-provider';
 import { SseClient } from './sse-client';
-import { FlagCache } from './cache';
 import type { FlipswitchOptions, FlagChangeEvent, SseConnectionStatus, FlipswitchEventHandlers, FlagEvaluation } from './types';
 
 type ProviderStatus = 'NOT_READY' | 'READY' | 'ERROR' | 'STALE';
@@ -19,8 +17,8 @@ const DEFAULT_BASE_URL = 'https://api.flipswitch.dev';
 /**
  * Flipswitch OpenFeature provider with real-time SSE support.
  *
- * This provider wraps OFREP-compatible flag evaluation with
- * automatic cache invalidation via Server-Sent Events.
+ * This provider wraps the OFREP provider for flag evaluation and adds
+ * real-time updates via Server-Sent Events (SSE).
  *
  * @example
  * ```typescript
@@ -48,7 +46,7 @@ export class FlipswitchProvider {
   private readonly apiKey: string;
   private readonly enableRealtime: boolean;
   private readonly fetchImpl: typeof fetch;
-  private readonly cache: FlagCache;
+  private readonly ofrepProvider: OFREPWebProvider;
   private sseClient: SseClient | null = null;
   private _status: ProviderStatus = 'NOT_READY';
   private eventHandlers = new Map<ProviderEvent, Set<EventHandler>>();
@@ -59,8 +57,14 @@ export class FlipswitchProvider {
     this.apiKey = options.apiKey;
     this.enableRealtime = options.enableRealtime ?? true;
     this.fetchImpl = options.fetchImplementation ?? (typeof window !== 'undefined' ? fetch.bind(window) : fetch);
-    this.cache = new FlagCache(options.pollingInterval ?? 30000);
     this.userEventHandlers = eventHandlers ?? {};
+
+    // Create underlying OFREP provider for flag evaluation
+    this.ofrepProvider = new OFREPWebProvider({
+      baseUrl: this.baseUrl + '/ofrep/v1',
+      fetchImplementation: this.fetchImpl,
+      headers: [['X-API-Key', this.apiKey]],
+    });
   }
 
   get status(): ProviderStatus {
@@ -71,34 +75,39 @@ export class FlipswitchProvider {
    * Initialize the provider.
    * Validates the API key and starts SSE connection if real-time is enabled.
    */
-  async initialize(_context?: EvaluationContext): Promise<void> {
+  async initialize(context?: EvaluationContext): Promise<void> {
     this._status = 'NOT_READY';
 
-    // Validate API key by making a bulk evaluation request
+    // Initialize the underlying OFREP provider
     try {
-      const response = await this.fetchImpl(`${this.baseUrl}/ofrep/v1/evaluate/flags`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': this.apiKey,
-        },
-        body: JSON.stringify({
-          context: { targetingKey: '_init_' },
-        }),
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        this._status = 'ERROR';
-        throw new Error('Invalid API key');
-      }
-
-      if (!response.ok && response.status !== 404) {
-        this._status = 'ERROR';
-        throw new Error(`Failed to connect to Flipswitch: ${response.status}`);
-      }
+      await this.ofrepProvider.initialize(context);
     } catch (error) {
-      this._status = 'ERROR';
-      throw error;
+      // OFREP provider may fail on init, try a bulk evaluation to validate API key
+      try {
+        const response = await this.fetchImpl(`${this.baseUrl}/ofrep/v1/evaluate/flags`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': this.apiKey,
+          },
+          body: JSON.stringify({
+            context: { targetingKey: '_init_' },
+          }),
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          this._status = 'ERROR';
+          throw new Error('Invalid API key');
+        }
+
+        if (!response.ok && response.status !== 404) {
+          this._status = 'ERROR';
+          throw new Error(`Failed to connect to Flipswitch: ${response.status}`);
+        }
+      } catch (validationError) {
+        this._status = 'ERROR';
+        throw validationError;
+      }
     }
 
     // Start SSE connection for real-time updates
@@ -116,7 +125,7 @@ export class FlipswitchProvider {
   async onClose(): Promise<void> {
     this.sseClient?.close();
     this.sseClient = null;
-    this.cache.clear();
+    await this.ofrepProvider.onClose?.();
     this._status = 'NOT_READY';
   }
 
@@ -148,10 +157,11 @@ export class FlipswitchProvider {
 
   /**
    * Handle a flag change event from SSE.
+   * Emits PROVIDER_CONFIGURATION_CHANGED to trigger re-evaluation.
    */
   private handleFlagChange(event: FlagChangeEvent): void {
-    this.cache.handleFlagChange(event);
     this.userEventHandlers.onFlagChange?.(event);
+    // Emit configuration changed event - OpenFeature clients will re-evaluate flags
     this.emit('PROVIDER_CONFIGURATION_CHANGED');
   }
 
@@ -176,141 +186,39 @@ export class FlipswitchProvider {
   }
 
   // ===============================
-  // Flag Resolution Methods
+  // Flag Resolution Methods - Delegated to OFREP Provider
   // ===============================
 
-  async resolveBooleanEvaluation(
+  resolveBooleanEvaluation(
     flagKey: string,
     defaultValue: boolean,
-    context: EvaluationContext,
-    _logger: Logger
-  ): Promise<ResolutionDetails<boolean>> {
-    return this.resolveFlag<boolean>(flagKey, defaultValue, context, 'boolean');
+    context: EvaluationContext
+  ): ResolutionDetails<boolean> {
+    return this.ofrepProvider.resolveBooleanEvaluation(flagKey, defaultValue, context);
   }
 
-  async resolveStringEvaluation(
+  resolveStringEvaluation(
     flagKey: string,
     defaultValue: string,
-    context: EvaluationContext,
-    _logger: Logger
-  ): Promise<ResolutionDetails<string>> {
-    return this.resolveFlag<string>(flagKey, defaultValue, context, 'string');
+    context: EvaluationContext
+  ): ResolutionDetails<string> {
+    return this.ofrepProvider.resolveStringEvaluation(flagKey, defaultValue, context);
   }
 
-  async resolveNumberEvaluation(
+  resolveNumberEvaluation(
     flagKey: string,
     defaultValue: number,
-    context: EvaluationContext,
-    _logger: Logger
-  ): Promise<ResolutionDetails<number>> {
-    return this.resolveFlag<number>(flagKey, defaultValue, context, 'number');
+    context: EvaluationContext
+  ): ResolutionDetails<number> {
+    return this.ofrepProvider.resolveNumberEvaluation(flagKey, defaultValue, context);
   }
 
-  async resolveObjectEvaluation<T extends JsonValue>(
+  resolveObjectEvaluation<T extends JsonValue>(
     flagKey: string,
     defaultValue: T,
-    context: EvaluationContext,
-    _logger: Logger
-  ): Promise<ResolutionDetails<T>> {
-    return this.resolveFlag<T>(flagKey, defaultValue, context, 'object');
-  }
-
-  /**
-   * Core flag resolution logic using OFREP.
-   */
-  private async resolveFlag<T>(
-    flagKey: string,
-    defaultValue: T,
-    context: EvaluationContext,
-    expectedType: 'boolean' | 'string' | 'number' | 'object'
-  ): Promise<ResolutionDetails<T>> {
-    try {
-      const response = await this.fetchImpl(`${this.baseUrl}/ofrep/v1/evaluate/flags/${flagKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': this.apiKey,
-        },
-        body: JSON.stringify({
-          context: this.transformContext(context),
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          return {
-            value: defaultValue,
-            reason: 'ERROR',
-            errorCode: ErrorCode.FLAG_NOT_FOUND,
-            errorMessage: `Flag '${flagKey}' not found`,
-          };
-        }
-
-        const errorBody = await response.text();
-        return {
-          value: defaultValue,
-          reason: 'ERROR',
-          errorCode: ErrorCode.GENERAL,
-          errorMessage: `OFREP error: ${response.status} - ${errorBody}`,
-        };
-      }
-
-      const result = await response.json();
-
-      // Validate type matches expected
-      const actualType = typeof result.value;
-      if (expectedType === 'object') {
-        if (actualType !== 'object' || result.value === null) {
-          return {
-            value: defaultValue,
-            reason: 'ERROR',
-            errorCode: ErrorCode.TYPE_MISMATCH,
-            errorMessage: `Expected object but got ${actualType}`,
-          };
-        }
-      } else if (actualType !== expectedType) {
-        return {
-          value: defaultValue,
-          reason: 'ERROR',
-          errorCode: ErrorCode.TYPE_MISMATCH,
-          errorMessage: `Expected ${expectedType} but got ${actualType}`,
-        };
-      }
-
-      return {
-        value: result.value as T,
-        variant: result.variant,
-        reason: result.reason || 'TARGETING_MATCH',
-        flagMetadata: result.metadata,
-      };
-    } catch (error) {
-      return {
-        value: defaultValue,
-        reason: 'ERROR',
-        errorCode: ErrorCode.GENERAL,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
-
-  /**
-   * Transform OpenFeature context to OFREP context format.
-   */
-  private transformContext(context: EvaluationContext): Record<string, unknown> {
-    const result: Record<string, unknown> = {};
-
-    if (context.targetingKey) {
-      result.targetingKey = context.targetingKey;
-    }
-
-    // Copy all context properties
-    for (const [key, value] of Object.entries(context)) {
-      if (key !== 'targetingKey') {
-        result[key] = value;
-      }
-    }
-
-    return result;
+    context: EvaluationContext
+  ): ResolutionDetails<T> {
+    return this.ofrepProvider.resolveObjectEvaluation(flagKey, defaultValue, context);
   }
 
   /**
@@ -331,8 +239,28 @@ export class FlipswitchProvider {
   }
 
   // ===============================
-  // Bulk Flag Evaluation
+  // Bulk Flag Evaluation (Direct HTTP - OFREP providers don't expose bulk API)
   // ===============================
+
+  /**
+   * Transform OpenFeature context to OFREP context format.
+   */
+  private transformContext(context: EvaluationContext): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+
+    if (context.targetingKey) {
+      result.targetingKey = context.targetingKey;
+    }
+
+    // Copy all context properties
+    for (const [key, value] of Object.entries(context)) {
+      if (key !== 'targetingKey') {
+        result[key] = value;
+      }
+    }
+
+    return result;
+  }
 
   /**
    * Infer the type of a value.
@@ -375,6 +303,9 @@ export class FlipswitchProvider {
   /**
    * Evaluate all flags for the given context.
    * Returns a list of all flag evaluations with their keys, values, types, and reasons.
+   *
+   * Note: This method makes direct HTTP calls since OFREP providers don't expose
+   * the bulk evaluation API.
    *
    * @param context The evaluation context
    * @returns List of flag evaluations
@@ -423,6 +354,9 @@ export class FlipswitchProvider {
 
   /**
    * Evaluate a single flag and return its evaluation result.
+   *
+   * Note: This method makes direct HTTP calls for demo purposes.
+   * For standard flag evaluation, use the OpenFeature client methods.
    *
    * @param flagKey The flag key to evaluate
    * @param context The evaluation context
