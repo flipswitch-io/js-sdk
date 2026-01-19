@@ -34,6 +34,11 @@ export interface FlipswitchOptions {
  */
 export interface FlagChangeEvent {
   /**
+   * The ID of the environment where the change occurred.
+   */
+  environmentId: number;
+
+  /**
    * The key of the flag that changed, or null for bulk invalidation.
    */
   flagKey: string | null;

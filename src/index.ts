@@ -28,6 +28,7 @@
 
 export { FlipswitchProvider } from './provider';
 export { SseClient } from './sse-client';
+export { FlagCache } from './cache';
 export type {
   FlipswitchOptions,
   FlagChangeEvent,
