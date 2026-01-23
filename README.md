@@ -64,7 +64,7 @@ const showFeature = await client.getBooleanValue('new-feature', false, context);
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `apiKey` | `string` | *required* | Environment API key from dashboard |
-| `baseUrl` | `string` | `https://api.flipswitch.dev` | Your Flipswitch server URL |
+| `baseUrl` | `string` | `https://api.flipswitch.io` | Your Flipswitch server URL |
 | `enableRealtime` | `boolean` | `true` | Enable SSE for real-time flag updates |
 | `pollingInterval` | `number` | `30000` | Cache TTL in milliseconds |
 | `fetchImplementation` | `typeof fetch` | `fetch` | Custom fetch function |
@@ -113,7 +113,7 @@ import { FlipswitchProvider } from '@flipswitch/sdk';
 
 // Initialize provider
 const provider = new FlipswitchProvider({
-  baseUrl: 'https://api.flipswitch.dev',
+  baseUrl: 'https://api.flipswitch.io',
   apiKey: 'your-api-key',
 });
 

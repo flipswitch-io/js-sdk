@@ -12,7 +12,7 @@ type ProviderStatus = 'NOT_READY' | 'READY' | 'ERROR' | 'STALE';
 type ProviderEvent = 'PROVIDER_READY' | 'PROVIDER_ERROR' | 'PROVIDER_STALE' | 'PROVIDER_CONFIGURATION_CHANGED';
 type EventHandler = () => void;
 
-const DEFAULT_BASE_URL = 'https://api.flipswitch.dev';
+const DEFAULT_BASE_URL = 'https://api.flipswitch.io';
 
 /**
  * Flipswitch OpenFeature provider with real-time SSE support.
@@ -25,7 +25,7 @@ const DEFAULT_BASE_URL = 'https://api.flipswitch.dev';
  * import { FlipswitchProvider } from '@flipswitch/sdk';
  * import { OpenFeature } from '@openfeature/web-sdk';
  *
- * // Only API key is required - defaults to https://api.flipswitch.dev
+ * // Only API key is required - defaults to https://api.flipswitch.io
  * const provider = new FlipswitchProvider({
  *   apiKey: 'your-api-key'
  * });

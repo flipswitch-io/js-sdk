@@ -10,7 +10,7 @@ export interface FlipswitchOptions {
 
   /**
    * The base URL of your Flipswitch server.
-   * @default 'https://api.flipswitch.dev'
+   * @default 'https://api.flipswitch.io'
    */
   baseUrl?: string;
 
