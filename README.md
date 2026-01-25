@@ -1,8 +1,11 @@
 # @flipswitch/sdk
 
-Flipswitch SDK for JavaScript/TypeScript with real-time SSE support.
+[![CI](https://github.com/flipswitch-io/js-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/flipswitch-io/js-sdk/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@flipswitch/sdk.svg)](https://www.npmjs.com/package/@flipswitch/sdk)
 
-This SDK provides an OpenFeature-compatible provider that wraps OFREP flag evaluation with automatic cache invalidation 
+Flipswitch SDK for JavaScript/TypeScript with real-time SSE support for OpenFeature.
+
+This SDK provides an OpenFeature-compatible provider that wraps OFREP flag evaluation with automatic cache invalidation
 via Server-Sent Events (SSE). When flags change in your Flipswitch dashboard, connected clients receive updates in
 real-time.
 
@@ -170,7 +173,6 @@ When reconnected, the provider status changes from `STALE` back to `READY`.
 A complete working demo is included. To run it:
 
 ```bash
-cd sdks/javascript
 npm install
 npm run demo -- <your-api-key>
 ```
@@ -182,6 +184,10 @@ The demo will:
 
 See [examples/demo.ts](./examples/demo.ts) for the full source.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
 ## License
 
-MIT
+MIT - see [LICENSE](LICENSE) for details.
