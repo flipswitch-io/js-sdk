@@ -1,7 +1,7 @@
-# @flipswitch/sdk
+# @flipswitch-io/sdk
 
 [![CI](https://github.com/flipswitch-io/js-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/flipswitch-io/js-sdk/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@flipswitch/sdk.svg)](https://www.npmjs.com/package/@flipswitch/sdk)
+[![npm](https://img.shields.io/npm/v/@flipswitch-io/sdk.svg)](https://www.npmjs.com/package/@flipswitch-io/sdk)
 
 Flipswitch SDK for JavaScript/TypeScript with real-time SSE support for OpenFeature.
 
@@ -12,9 +12,9 @@ real-time.
 ## Installation
 
 ```bash
-npm install @flipswitch/sdk @openfeature/web-sdk
+npm install @flipswitch-io/sdk @openfeature/web-sdk
 # or
-npm install @flipswitch/sdk @openfeature/server-sdk
+npm install @flipswitch-io/sdk @openfeature/server-sdk
 ```
 
 ## Quick Start
@@ -22,7 +22,7 @@ npm install @flipswitch/sdk @openfeature/server-sdk
 ### Browser (React, Vue, etc.)
 
 ```typescript
-import { FlipswitchProvider } from '@flipswitch/sdk';
+import { FlipswitchProvider } from '@flipswitch-io/sdk';
 import { OpenFeature } from '@openfeature/web-sdk';
 
 // Only API key is required
@@ -42,7 +42,7 @@ const welcomeMessage = await client.getStringValue('welcome-message', 'Hello!');
 ### Node.js (Server)
 
 ```typescript
-import { FlipswitchProvider } from '@flipswitch/sdk';
+import { FlipswitchProvider } from '@flipswitch-io/sdk';
 import { OpenFeature } from '@openfeature/server-sdk';
 
 const provider = new FlipswitchProvider({
@@ -112,7 +112,7 @@ provider.reconnectSse();
 
 ```tsx
 import { OpenFeature, OpenFeatureProvider, useFlag } from '@openfeature/react-sdk';
-import { FlipswitchProvider } from '@flipswitch/sdk';
+import { FlipswitchProvider } from '@flipswitch-io/sdk';
 
 // Initialize provider
 const provider = new FlipswitchProvider({

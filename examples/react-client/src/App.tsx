@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FlipswitchProvider, FlagEvaluation, SseConnectionStatus } from '@flipswitch/sdk';
+import { FlipswitchProvider, FlagEvaluation, SseConnectionStatus } from '@flipswitch-io/sdk';
 
 // Dark mode color palette (matching Flipswitch frontend)
 const colors = {

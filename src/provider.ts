@@ -23,7 +23,7 @@ const SDK_VERSION = '0.1.0';
  *
  * @example
  * ```typescript
- * import { FlipswitchProvider } from '@flipswitch/sdk';
+ * import { FlipswitchProvider } from '@flipswitch-io/sdk';
  * import { OpenFeature } from '@openfeature/web-sdk';
  *
  * // Only API key is required - defaults to https://api.flipswitch.io

@@ -1,5 +1,5 @@
 /**
- * @flipswitch/sdk
+ * @flipswitch-io/sdk
  *
  * Flipswitch SDK with real-time SSE support for OpenFeature.
  *
@@ -10,7 +10,7 @@
  *
  * @example
  * ```typescript
- * import { FlipswitchProvider } from '@flipswitch/sdk';
+ * import { FlipswitchProvider } from '@flipswitch-io/sdk';
  * import { OpenFeature } from '@openfeature/web-sdk';
  *
  * // Only API key is required
