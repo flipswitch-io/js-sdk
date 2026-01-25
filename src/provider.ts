@@ -1,19 +1,18 @@
-import type {
-  EvaluationContext,
-  JsonValue,
-  ProviderMetadata,
-  ResolutionDetails,
+import {
+  ClientProviderStatus,
+  ClientProviderEvents,
+  type EvaluationContext,
+  type JsonValue,
+  type ProviderMetadata,
+  type ResolutionDetails,
 } from '@openfeature/core';
 import { OFREPWebProvider } from '@openfeature/ofrep-web-provider';
 import { SseClient } from './sse-client';
 import type { FlipswitchOptions, FlagChangeEvent, SseConnectionStatus, FlipswitchEventHandlers, FlagEvaluation } from './types';
-
-type ProviderStatus = 'NOT_READY' | 'READY' | 'ERROR' | 'STALE';
-type ProviderEvent = 'PROVIDER_READY' | 'PROVIDER_ERROR' | 'PROVIDER_STALE' | 'PROVIDER_CONFIGURATION_CHANGED';
 type EventHandler = () => void;
 
 const DEFAULT_BASE_URL = 'https://api.flipswitch.io';
-const SDK_VERSION = '0.1.0';
+const SDK_VERSION = '0.1.1';
 
 /**
  * Flipswitch OpenFeature provider with real-time SSE support.
@@ -50,8 +49,8 @@ export class FlipswitchProvider {
   private readonly fetchImpl: typeof fetch;
   private readonly ofrepProvider: OFREPWebProvider;
   private sseClient: SseClient | null = null;
-  private _status: ProviderStatus = 'NOT_READY';
-  private eventHandlers = new Map<ProviderEvent, Set<EventHandler>>();
+  private _status: ClientProviderStatus = ClientProviderStatus.NOT_READY;
+  private eventHandlers = new Map<ClientProviderEvents, Set<EventHandler>>();
   private userEventHandlers: FlipswitchEventHandlers = {};
 
   constructor(options: FlipswitchOptions, eventHandlers?: FlipswitchEventHandlers) {
@@ -151,7 +150,7 @@ export class FlipswitchProvider {
     };
   }
 
-  get status(): ProviderStatus {
+  get status(): ClientProviderStatus {
     return this._status;
   }
 
@@ -160,7 +159,7 @@ export class FlipswitchProvider {
    * Validates the API key and starts SSE connection if real-time is enabled.
    */
   async initialize(context?: EvaluationContext): Promise<void> {
-    this._status = 'NOT_READY';
+    this._status = ClientProviderStatus.NOT_READY;
 
     // Initialize the underlying OFREP provider
     try {
@@ -181,16 +180,16 @@ export class FlipswitchProvider {
         });
 
         if (response.status === 401 || response.status === 403) {
-          this._status = 'ERROR';
+          this._status = ClientProviderStatus.ERROR;
           throw new Error('Invalid API key');
         }
 
         if (!response.ok && response.status !== 404) {
-          this._status = 'ERROR';
+          this._status = ClientProviderStatus.ERROR;
           throw new Error(`Failed to connect to Flipswitch: ${response.status}`);
         }
       } catch (validationError) {
-        this._status = 'ERROR';
+        this._status = ClientProviderStatus.ERROR;
         throw validationError;
       }
     }
@@ -200,8 +199,8 @@ export class FlipswitchProvider {
       this.startSseConnection();
     }
 
-    this._status = 'READY';
-    this.emit('PROVIDER_READY');
+    this._status = ClientProviderStatus.READY;
+    this.emit(ClientProviderEvents.Ready);
   }
 
   /**
@@ -211,7 +210,7 @@ export class FlipswitchProvider {
     this.sseClient?.close();
     this.sseClient = null;
     await this.ofrepProvider.onClose?.();
-    this._status = 'NOT_READY';
+    this._status = ClientProviderStatus.NOT_READY;
   }
 
   /**
@@ -229,11 +228,11 @@ export class FlipswitchProvider {
         this.userEventHandlers.onConnectionStatusChange?.(status);
 
         if (status === 'error') {
-          this._status = 'STALE';
-          this.emit('PROVIDER_STALE');
-        } else if (status === 'connected' && this._status === 'STALE') {
-          this._status = 'READY';
-          this.emit('PROVIDER_READY');
+          this._status = ClientProviderStatus.STALE;
+          this.emit(ClientProviderEvents.Stale);
+        } else if (status === 'connected' && this._status === ClientProviderStatus.STALE) {
+          this._status = ClientProviderStatus.READY;
+          this.emit(ClientProviderEvents.Ready);
         }
       },
       telemetryHeaders
@@ -264,13 +263,13 @@ export class FlipswitchProvider {
   private handleFlagChange(event: FlagChangeEvent): void {
     this.userEventHandlers.onFlagChange?.(event);
     // Emit configuration changed event - OpenFeature clients will re-evaluate flags
-    this.emit('PROVIDER_CONFIGURATION_CHANGED');
+    this.emit(ClientProviderEvents.ConfigurationChanged);
   }
 
   /**
    * Emit an event to registered handlers.
    */
-  private emit(event: ProviderEvent): void {
+  private emit(event: ClientProviderEvents): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
       Array.from(handlers).forEach(handler => handler());
@@ -280,7 +279,7 @@ export class FlipswitchProvider {
   /**
    * Register an event handler.
    */
-  onProviderEvent?(event: ProviderEvent, handler: EventHandler): void {
+  onProviderEvent?(event: ClientProviderEvents, handler: EventHandler): void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, new Set());
     }

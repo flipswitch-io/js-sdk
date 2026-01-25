@@ -1,6 +1,6 @@
 {
   "name": "@flipswitch-io/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Flipswitch SDK with real-time SSE support for OpenFeature",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -35,11 +35,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@openfeature/core": "^1.6.0",
     "@openfeature/ofrep-core": "^2.0.0",
     "@openfeature/ofrep-web-provider": "^0.3.5"
   },
   "peerDependencies": {
+    "@openfeature/core": "^1.6.0",
     "@openfeature/server-sdk": "^1.0.0 || ^2.0.0",
     "@openfeature/web-sdk": "^1.0.0 || ^2.0.0"
   },
@@ -52,6 +52,7 @@
     }
   },
   "devDependencies": {
+    "@openfeature/core": "^1.6.0",
     "@openfeature/ofrep-provider": "^0.2.2",
     "@openfeature/server-sdk": "^1.17.0",
     "@openfeature/web-sdk": "^1.7.2",
