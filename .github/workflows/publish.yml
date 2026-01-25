@@ -23,8 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          registry-url: 'https://registry.npmjs.org'
+          node-version: 'lts/*'
           cache: npm
 
       - name: Install dependencies
@@ -50,4 +49,4 @@ jobs:
         run: npm version ${{ inputs.version }} --no-git-tag-version
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish --access public
