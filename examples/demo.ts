@@ -2,18 +2,23 @@
  * Flipswitch JavaScript SDK Demo
  *
  * Run this demo with:
- *   npm run demo -- <your-api-key>
+ *   npm run demo -- <your-api-key> [base-url]
  *
  * Or directly:
- *   npx tsx examples/demo.ts <your-api-key>
+ *   npx tsx examples/demo.ts <your-api-key> [base-url]
+ *
+ * Or set the FLIPSWITCH_BASE_URL environment variable:
+ *   FLIPSWITCH_BASE_URL=http://localhost:8080 npm run demo -- <your-api-key>
  */
 
 import { FlipswitchProvider, FlagEvaluation } from '../src';
 
 const apiKey = process.argv[2];
+const baseUrl = process.argv[3] || process.env.FLIPSWITCH_BASE_URL;
 
 if (!apiKey) {
-  console.error('Usage: npm run demo -- <api-key>');
+  console.error('Usage: npm run demo -- <api-key> [base-url]');
+  console.error('       Or set FLIPSWITCH_BASE_URL environment variable');
   process.exit(1);
 }
 
@@ -53,9 +58,13 @@ async function main() {
   console.log('Flipswitch JavaScript SDK Demo');
   console.log('==============================\n');
 
+  if (baseUrl) {
+    console.log(`Using base URL: ${baseUrl}`);
+  }
+
   // Create provider - only API key is required
   provider = new FlipswitchProvider(
-    { apiKey },
+    { apiKey, baseUrl },
     {
       onFlagChange: async (event) => {
         const flagKey = event.flagKey;

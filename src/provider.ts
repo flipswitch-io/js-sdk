@@ -13,6 +13,7 @@ type ProviderEvent = 'PROVIDER_READY' | 'PROVIDER_ERROR' | 'PROVIDER_STALE' | 'P
 type EventHandler = () => void;
 
 const DEFAULT_BASE_URL = 'https://api.flipswitch.io';
+const SDK_VERSION = '0.1.0';
 
 /**
  * Flipswitch OpenFeature provider with real-time SSE support.
@@ -45,6 +46,7 @@ export class FlipswitchProvider {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly enableRealtime: boolean;
+  private readonly enableTelemetry: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly ofrepProvider: OFREPWebProvider;
   private sseClient: SseClient | null = null;
@@ -56,15 +58,97 @@ export class FlipswitchProvider {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     this.apiKey = options.apiKey;
     this.enableRealtime = options.enableRealtime ?? true;
+    this.enableTelemetry = options.enableTelemetry ?? true;
     this.fetchImpl = options.fetchImplementation ?? (typeof window !== 'undefined' ? fetch.bind(window) : fetch);
     this.userEventHandlers = eventHandlers ?? {};
+
+    // Build headers array
+    const headers: [string, string][] = [['X-API-Key', this.apiKey]];
+
+    if (this.enableTelemetry) {
+      headers.push(['X-Flipswitch-SDK', this.getTelemetrySdkHeader()]);
+      headers.push(['X-Flipswitch-Runtime', this.getTelemetryRuntimeHeader()]);
+      headers.push(['X-Flipswitch-OS', this.getTelemetryOsHeader()]);
+      headers.push(['X-Flipswitch-Features', this.getTelemetryFeaturesHeader()]);
+    }
 
     // Create underlying OFREP provider for flag evaluation
     this.ofrepProvider = new OFREPWebProvider({
       baseUrl: this.baseUrl + '/ofrep/v1',
       fetchImplementation: this.fetchImpl,
-      headers: [['X-API-Key', this.apiKey]],
+      headers,
     });
+  }
+
+  private getTelemetrySdkHeader(): string {
+    return `javascript/${SDK_VERSION}`;
+  }
+
+  private getTelemetryRuntimeHeader(): string {
+    // Detect runtime environment
+    if (typeof process !== 'undefined' && process.versions?.node) {
+      return `node/${process.versions.node}`;
+    }
+    if (typeof navigator !== 'undefined') {
+      // Browser - extract browser info from userAgent
+      const ua = navigator.userAgent;
+      if (ua.includes('Chrome')) {
+        const match = ua.match(/Chrome\/(\d+)/);
+        return `chrome/${match?.[1] ?? 'unknown'}`;
+      }
+      if (ua.includes('Firefox')) {
+        const match = ua.match(/Firefox\/(\d+)/);
+        return `firefox/${match?.[1] ?? 'unknown'}`;
+      }
+      if (ua.includes('Safari') && !ua.includes('Chrome')) {
+        const match = ua.match(/Version\/(\d+)/);
+        return `safari/${match?.[1] ?? 'unknown'}`;
+      }
+      return 'browser/unknown';
+    }
+    return 'unknown/unknown';
+  }
+
+  private getTelemetryOsHeader(): string {
+    // Detect OS
+    if (typeof process !== 'undefined' && process.platform) {
+      const platform = process.platform;
+      const arch = process.arch;
+      const os = platform === 'darwin' ? 'darwin' : platform === 'win32' ? 'windows' : platform;
+      return `${os}/${arch}`;
+    }
+    if (typeof navigator !== 'undefined') {
+      const ua = navigator.userAgent.toLowerCase();
+      let os = 'unknown';
+      let arch = 'unknown';
+
+      if (ua.includes('mac')) os = 'darwin';
+      else if (ua.includes('win')) os = 'windows';
+      else if (ua.includes('linux')) os = 'linux';
+      else if (ua.includes('android')) os = 'android';
+      else if (ua.includes('iphone') || ua.includes('ipad')) os = 'ios';
+
+      // Try to detect architecture
+      if (ua.includes('arm64') || ua.includes('aarch64')) arch = 'arm64';
+      else if (ua.includes('x64') || ua.includes('x86_64') || ua.includes('amd64')) arch = 'amd64';
+
+      return `${os}/${arch}`;
+    }
+    return 'unknown/unknown';
+  }
+
+  private getTelemetryFeaturesHeader(): string {
+    return `sse=${this.enableRealtime}`;
+  }
+
+  private getTelemetryHeaders(): Record<string, string> {
+    if (!this.enableTelemetry) return {};
+    return {
+      'X-Flipswitch-SDK': this.getTelemetrySdkHeader(),
+      'X-Flipswitch-Runtime': this.getTelemetryRuntimeHeader(),
+      'X-Flipswitch-OS': this.getTelemetryOsHeader(),
+      'X-Flipswitch-Features': this.getTelemetryFeaturesHeader(),
+    };
   }
 
   get status(): ProviderStatus {
@@ -89,6 +173,7 @@ export class FlipswitchProvider {
           headers: {
             'Content-Type': 'application/json',
             'X-API-Key': this.apiKey,
+            ...this.getTelemetryHeaders(),
           },
           body: JSON.stringify({
             context: { targetingKey: '_init_' },
@@ -317,6 +402,7 @@ export class FlipswitchProvider {
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': this.apiKey,
+          ...this.getTelemetryHeaders(),
         },
         body: JSON.stringify({
           context: this.transformContext(context),
@@ -369,6 +455,7 @@ export class FlipswitchProvider {
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': this.apiKey,
+          ...this.getTelemetryHeaders(),
         },
         body: JSON.stringify({
           context: this.transformContext(context),
