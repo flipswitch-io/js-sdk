@@ -18,7 +18,8 @@ export class SseClient {
     private readonly baseUrl: string,
     private readonly apiKey: string,
     private readonly onFlagChange: (event: FlagChangeEvent) => void,
-    private readonly onStatusChange?: (status: SseConnectionStatus) => void
+    private readonly onStatusChange?: (status: SseConnectionStatus) => void,
+    private readonly telemetryHeaders?: Record<string, string>
   ) {}
 
   /**
@@ -61,13 +62,16 @@ export class SseClient {
    */
   private async connectWithFetch(url: string): Promise<void> {
     try {
+      const headers: Record<string, string> = {
+        'X-API-Key': this.apiKey,
+        Accept: 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        ...this.telemetryHeaders,
+      };
+
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'X-API-Key': this.apiKey,
-          Accept: 'text/event-stream',
-          'Cache-Control': 'no-cache',
-        },
+        headers,
       });
 
       if (!response.ok) {

@@ -218,6 +218,7 @@ export class FlipswitchProvider {
    * Start the SSE connection for real-time updates.
    */
   private startSseConnection(): void {
+    const telemetryHeaders = this.getTelemetryHeadersMap();
     this.sseClient = new SseClient(
       this.baseUrl,
       this.apiKey,
@@ -234,10 +235,26 @@ export class FlipswitchProvider {
           this._status = 'READY';
           this.emit('PROVIDER_READY');
         }
-      }
+      },
+      telemetryHeaders
     );
 
     this.sseClient.connect();
+  }
+
+  /**
+   * Get telemetry headers as a map.
+   */
+  private getTelemetryHeadersMap(): Record<string, string> | undefined {
+    if (!this.enableTelemetry) {
+      return undefined;
+    }
+    return {
+      'X-Flipswitch-SDK': this.getTelemetrySdkHeader(),
+      'X-Flipswitch-Runtime': this.getTelemetryRuntimeHeader(),
+      'X-Flipswitch-OS': this.getTelemetryOsHeader(),
+      'X-Flipswitch-Features': this.getTelemetryFeaturesHeader(),
+    };
   }
 
   /**
