@@ -45,7 +45,6 @@ export class FlipswitchProvider {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly enableRealtime: boolean;
-  private readonly enableTelemetry: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly ofrepProvider: OFREPWebProvider;
   private sseClient: SseClient | null = null;
@@ -57,19 +56,17 @@ export class FlipswitchProvider {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     this.apiKey = options.apiKey;
     this.enableRealtime = options.enableRealtime ?? true;
-    this.enableTelemetry = options.enableTelemetry ?? true;
     this.fetchImpl = options.fetchImplementation ?? (typeof window !== 'undefined' ? fetch.bind(window) : fetch);
     this.userEventHandlers = eventHandlers ?? {};
 
     // Build headers array
-    const headers: [string, string][] = [['X-API-Key', this.apiKey]];
-
-    if (this.enableTelemetry) {
-      headers.push(['X-Flipswitch-SDK', this.getTelemetrySdkHeader()]);
-      headers.push(['X-Flipswitch-Runtime', this.getTelemetryRuntimeHeader()]);
-      headers.push(['X-Flipswitch-OS', this.getTelemetryOsHeader()]);
-      headers.push(['X-Flipswitch-Features', this.getTelemetryFeaturesHeader()]);
-    }
+    const headers: [string, string][] = [
+      ['X-API-Key', this.apiKey],
+      ['X-Flipswitch-SDK', this.getTelemetrySdkHeader()],
+      ['X-Flipswitch-Runtime', this.getTelemetryRuntimeHeader()],
+      ['X-Flipswitch-OS', this.getTelemetryOsHeader()],
+      ['X-Flipswitch-Features', this.getTelemetryFeaturesHeader()],
+    ];
 
     // Create underlying OFREP provider for flag evaluation
     // Note: OFREPWebProvider automatically appends /ofrep/v1 to the baseUrl
@@ -142,7 +139,6 @@ export class FlipswitchProvider {
   }
 
   private getTelemetryHeaders(): Record<string, string> {
-    if (!this.enableTelemetry) return {};
     return {
       'X-Flipswitch-SDK': this.getTelemetrySdkHeader(),
       'X-Flipswitch-Runtime': this.getTelemetryRuntimeHeader(),
@@ -245,10 +241,7 @@ export class FlipswitchProvider {
   /**
    * Get telemetry headers as a map.
    */
-  private getTelemetryHeadersMap(): Record<string, string> | undefined {
-    if (!this.enableTelemetry) {
-      return undefined;
-    }
+  private getTelemetryHeadersMap(): Record<string, string> {
     return {
       'X-Flipswitch-SDK': this.getTelemetrySdkHeader(),
       'X-Flipswitch-Runtime': this.getTelemetryRuntimeHeader(),
