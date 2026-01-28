@@ -23,14 +23,6 @@ export interface FlipswitchOptions {
   enableRealtime?: boolean;
 
   /**
-   * Enable telemetry collection.
-   * When enabled, the SDK sends usage statistics (SDK version, runtime version,
-   * OS, architecture) to help improve the service. No personal data is collected.
-   * @default true
-   */
-  enableTelemetry?: boolean;
-
-  /**
    * Custom fetch function for making HTTP requests.
    * Useful for testing or custom networking needs.
    */
