@@ -72,8 +72,9 @@ export class FlipswitchProvider {
     }
 
     // Create underlying OFREP provider for flag evaluation
+    // Note: OFREPWebProvider automatically appends /ofrep/v1 to the baseUrl
     this.ofrepProvider = new OFREPWebProvider({
-      baseUrl: this.baseUrl + '/ofrep/v1',
+      baseUrl: this.baseUrl,
       fetchImplementation: this.fetchImpl,
       headers,
     });

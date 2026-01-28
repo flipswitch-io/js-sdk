@@ -1,6 +1,6 @@
 {
   "name": "@flipswitch-io/sdk",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Flipswitch SDK with real-time SSE support for OpenFeature",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

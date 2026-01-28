@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@flipswitch-io/sdk": "file:../..",
+    "@flipswitch-io/sdk": "^0.1.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
