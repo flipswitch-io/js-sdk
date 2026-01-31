@@ -30,14 +30,49 @@ export interface FlipswitchOptions {
 }
 
 /**
- * Event emitted when a flag changes.
+ * Event emitted when a single flag is updated.
+ */
+export interface FlagUpdatedEvent {
+  /**
+   * The key of the flag that changed.
+   */
+  flagKey: string;
+
+  /**
+   * ISO timestamp of when the change occurred.
+   */
+  timestamp: string;
+}
+
+/**
+ * Event emitted when configuration changes that may affect multiple flags.
+ */
+export interface ConfigUpdatedEvent {
+  /**
+   * The reason for the configuration update.
+   * Possible values: 'segment-modified', 'api-key-rotated'
+   */
+  reason: string;
+
+  /**
+   * ISO timestamp of when the change occurred.
+   */
+  timestamp: string;
+}
+
+/**
+ * Union type for all flag events.
+ * Used internally to handle both event types.
+ */
+export type FlagEvent =
+  | { type: 'flag-updated'; data: FlagUpdatedEvent }
+  | { type: 'config-updated'; data: ConfigUpdatedEvent };
+
+/**
+ * @deprecated Use FlagUpdatedEvent or ConfigUpdatedEvent instead.
+ * Event emitted when a flag changes (legacy format).
  */
 export interface FlagChangeEvent {
-  /**
-   * The ID of the environment where the change occurred.
-   */
-  environmentId: number;
-
   /**
    * The key of the flag that changed, or null for bulk invalidation.
    */

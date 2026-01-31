@@ -1,4 +1,4 @@
-import type { FlagChangeEvent, SseConnectionStatus } from './types';
+import type { FlagChangeEvent, FlagUpdatedEvent, ConfigUpdatedEvent, SseConnectionStatus } from './types';
 
 const MIN_RETRY_DELAY = 1000;
 const MAX_RETRY_DELAY = 30000;
@@ -159,13 +159,38 @@ export class SseClient {
       return;
     }
 
-    if (eventType === 'flag-change') {
-      try {
+    try {
+      if (eventType === 'flag-updated') {
+        // Single flag was modified
+        const parsed: FlagUpdatedEvent = JSON.parse(data);
+        const event: FlagChangeEvent = {
+          flagKey: parsed.flagKey,
+          timestamp: parsed.timestamp,
+        };
+        this.onFlagChange(event);
+      } else if (eventType === 'config-updated') {
+        // Configuration changed, need to refresh all flags
+        const parsed: ConfigUpdatedEvent = JSON.parse(data);
+
+        // Log warning for api-key-rotated
+        if (parsed.reason === 'api-key-rotated') {
+          console.warn(
+            '[Flipswitch] API key has been rotated. You may need to update your API key configuration.'
+          );
+        }
+
+        const event: FlagChangeEvent = {
+          flagKey: null, // null indicates all flags should be refreshed
+          timestamp: parsed.timestamp,
+        };
+        this.onFlagChange(event);
+      } else if (eventType === 'flag-change') {
+        // Legacy event format for backward compatibility
         const event: FlagChangeEvent = JSON.parse(data);
         this.onFlagChange(event);
-      } catch (error) {
-        console.error('[Flipswitch] Failed to parse flag-change event:', error);
       }
+    } catch (error) {
+      console.error(`[Flipswitch] Failed to parse ${eventType} event:`, error);
     }
   }
 
