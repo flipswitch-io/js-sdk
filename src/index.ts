@@ -32,6 +32,9 @@ export { FlagCache } from './cache';
 export type {
   FlipswitchOptions,
   FlagChangeEvent,
+  FlagUpdatedEvent,
+  ConfigUpdatedEvent,
+  FlagEvent,
   SseConnectionStatus,
   FlipswitchEventHandlers,
   FlagEvaluation,
