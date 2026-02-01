@@ -1,4 +1,10 @@
-import type { FlagChangeEvent, FlagUpdatedEvent, ConfigUpdatedEvent, SseConnectionStatus } from './types';
+import type {
+  FlagChangeEvent,
+  FlagUpdatedEvent,
+  ConfigUpdatedEvent,
+  ApiKeyRotatedEvent,
+  SseConnectionStatus,
+} from './types';
 
 const MIN_RETRY_DELAY = 1000;
 const MAX_RETRY_DELAY = 30000;
@@ -6,29 +12,46 @@ const MAX_RETRY_DELAY = 30000;
 /**
  * SSE client for real-time flag change notifications.
  * Handles automatic reconnection with exponential backoff.
+ * Includes visibility API integration for browser environments.
  */
 export class SseClient {
   private eventSource: EventSource | null = null;
   private retryDelay = MIN_RETRY_DELAY;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
+  private paused = false;
   private status: SseConnectionStatus = 'disconnected';
+  private visibilityHandler: (() => void) | null = null;
+  private abortController: AbortController | null = null;
 
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
     private readonly onFlagChange: (event: FlagChangeEvent) => void,
     private readonly onStatusChange?: (status: SseConnectionStatus) => void,
-    private readonly telemetryHeaders?: Record<string, string>
+    private readonly telemetryHeaders?: Record<string, string>,
+    private readonly enableVisibilityHandling: boolean = true
   ) {}
 
   /**
    * Start the SSE connection.
    */
   connect(): void {
-    if (this.closed) return;
+    if (this.closed || this.paused) return;
+
+    // Abort any existing connection
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.abortController = new AbortController();
+
     if (this.eventSource) {
       this.eventSource.close();
+    }
+
+    // Setup visibility handling for browser environments
+    if (this.enableVisibilityHandling) {
+      this.setupVisibilityHandling();
     }
 
     this.updateStatus('connecting');
@@ -51,10 +74,76 @@ export class SseClient {
         this.connectWithPolyfill(url);
       }
     } catch (error) {
-      console.error('[Flipswitch] Failed to establish SSE connection:', error);
+      console.warn('[Flipswitch] Failed to establish SSE connection:', error);
       this.updateStatus('error');
       this.scheduleReconnect();
     }
+  }
+
+  /**
+   * Setup visibility API handling.
+   * Disconnects when tab is hidden, reconnects when visible.
+   */
+  private setupVisibilityHandling(): void {
+    if (typeof document === 'undefined' || this.visibilityHandler) return;
+
+    this.visibilityHandler = () => {
+      if (document.hidden) {
+        // Tab is hidden, pause the connection to save resources
+        this.pause();
+      } else {
+        // Tab is visible, resume the connection
+        this.resume();
+      }
+    };
+
+    document.addEventListener('visibilitychange', this.visibilityHandler);
+  }
+
+  /**
+   * Pause the SSE connection (used by visibility API).
+   * Different from close() - can be resumed.
+   */
+  pause(): void {
+    if (this.paused || this.closed) return;
+
+    this.paused = true;
+
+    // Abort current connection
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+
+    this.updateStatus('disconnected');
+  }
+
+  /**
+   * Resume the SSE connection after being paused.
+   */
+  resume(): void {
+    if (!this.paused || this.closed) return;
+
+    this.paused = false;
+    this.retryDelay = MIN_RETRY_DELAY; // Reset retry delay on resume
+    this.connect();
+  }
+
+  /**
+   * Check if the connection is paused.
+   */
+  isPaused(): boolean {
+    return this.paused;
   }
 
   /**
@@ -72,6 +161,7 @@ export class SseClient {
       const response = await fetch(url, {
         method: 'GET',
         headers,
+        signal: this.abortController?.signal,
       });
 
       if (!response.ok) {
@@ -126,14 +216,14 @@ export class SseClient {
 
       processStream().catch((error) => {
         if (!this.closed) {
-          console.error('[Flipswitch] SSE stream error:', error);
+          console.warn('[Flipswitch] SSE stream error:', error);
           this.updateStatus('error');
           this.scheduleReconnect();
         }
       });
     } catch (error) {
       if (!this.closed) {
-        console.error('[Flipswitch] SSE connection error:', error);
+        console.warn('[Flipswitch] SSE connection error:', error);
         this.updateStatus('error');
         this.scheduleReconnect();
       }
@@ -169,25 +259,24 @@ export class SseClient {
         };
         this.onFlagChange(event);
       } else if (eventType === 'config-updated') {
-        // Configuration changed, need to refresh all flags
+        // Configuration changed, always refresh all flags
         const parsed: ConfigUpdatedEvent = JSON.parse(data);
-
-        // Log warning for api-key-rotated
-        if (parsed.reason === 'api-key-rotated') {
-          console.warn(
-            '[Flipswitch] API key has been rotated. You may need to update your API key configuration.'
-          );
-        }
-
         const event: FlagChangeEvent = {
           flagKey: null, // null indicates all flags should be refreshed
           timestamp: parsed.timestamp,
         };
         this.onFlagChange(event);
-      } else if (eventType === 'flag-change') {
-        // Legacy event format for backward compatibility
-        const event: FlagChangeEvent = JSON.parse(data);
-        this.onFlagChange(event);
+      } else if (eventType === 'api-key-rotated') {
+        // API key was rotated or rotation was aborted
+        const parsed: ApiKeyRotatedEvent = JSON.parse(data);
+        if (!parsed.validUntil) {
+          console.info('[Flipswitch] API key rotation was aborted');
+        } else {
+          console.warn(
+            `[Flipswitch] API key was rotated. Current key valid until: ${parsed.validUntil}`
+          );
+        }
+        // No cache invalidation - this is just informational
       }
     } catch (error) {
       console.error(`[Flipswitch] Failed to parse ${eventType} event:`, error);
@@ -234,6 +323,18 @@ export class SseClient {
   close(): void {
     this.closed = true;
     this.updateStatus('disconnected');
+
+    // Clean up visibility handler
+    if (this.visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
+
+    // Abort current connection
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
 
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);

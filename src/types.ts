@@ -27,6 +27,50 @@ export interface FlipswitchOptions {
    * Useful for testing or custom networking needs.
    */
   fetchImplementation?: typeof fetch;
+
+  /**
+   * Persist flag values to localStorage (browser only).
+   * When enabled, flag values are cached in localStorage and used
+   * as fallback when offline or during initial load.
+   * @default true (in browser environments)
+   */
+  persistCache?: boolean;
+
+  /**
+   * Enable offline mode support.
+   * When enabled, the provider will detect offline state and serve
+   * cached values without attempting network requests.
+   * @default true (in browser environments)
+   */
+  offlineMode?: boolean;
+
+  /**
+   * Enable visibility API integration (browser only).
+   * When enabled, SSE connection is paused when the tab is hidden
+   * and resumed when it becomes visible, saving resources.
+   * @default true (in browser environments)
+   */
+  enableVisibilityHandling?: boolean;
+
+  /**
+   * Enable polling fallback when SSE fails.
+   * After maxSseRetries, the provider will fall back to polling.
+   * @default true
+   */
+  enablePollingFallback?: boolean;
+
+  /**
+   * Polling interval in milliseconds for fallback mode.
+   * Only used when SSE connection fails and polling fallback is enabled.
+   * @default 30000 (30 seconds)
+   */
+  pollingInterval?: number;
+
+  /**
+   * Maximum SSE retry attempts before falling back to polling.
+   * @default 5
+   */
+  maxSseRetries?: number;
 }
 
 /**
@@ -49,24 +93,35 @@ export interface FlagUpdatedEvent {
  */
 export interface ConfigUpdatedEvent {
   /**
-   * The reason for the configuration update.
-   * Possible values: 'segment-modified', 'api-key-rotated'
-   */
-  reason: string;
-
-  /**
    * ISO timestamp of when the change occurred.
    */
   timestamp: string;
 }
 
 /**
+ * Event emitted when an API key has been rotated or rotation was aborted.
+ */
+export interface ApiKeyRotatedEvent {
+  /**
+   * ISO timestamp when the current key expires.
+   * Null if the rotation was aborted.
+   */
+  validUntil: string | null;
+
+  /**
+   * ISO timestamp of when the event occurred.
+   */
+  timestamp: string;
+}
+
+/**
  * Union type for all flag events.
- * Used internally to handle both event types.
+ * Used internally to handle event types.
  */
 export type FlagEvent =
   | { type: 'flag-updated'; data: FlagUpdatedEvent }
-  | { type: 'config-updated'; data: ConfigUpdatedEvent };
+  | { type: 'config-updated'; data: ConfigUpdatedEvent }
+  | { type: 'api-key-rotated'; data: ApiKeyRotatedEvent };
 
 /**
  * @deprecated Use FlagUpdatedEvent or ConfigUpdatedEvent instead.

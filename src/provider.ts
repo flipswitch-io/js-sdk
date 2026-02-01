@@ -8,11 +8,14 @@ import {
 } from '@openfeature/core';
 import { OFREPWebProvider } from '@openfeature/ofrep-web-provider';
 import { SseClient } from './sse-client';
+import { BrowserCache } from './browser-cache';
 import type { FlipswitchOptions, FlagChangeEvent, SseConnectionStatus, FlipswitchEventHandlers, FlagEvaluation } from './types';
 type EventHandler = () => void;
 
 const DEFAULT_BASE_URL = 'https://api.flipswitch.io';
-const SDK_VERSION = '0.1.1';
+const SDK_VERSION = '0.1.2';
+const DEFAULT_POLLING_INTERVAL = 30000; // 30 seconds
+const DEFAULT_MAX_SSE_RETRIES = 5;
 
 /**
  * Flipswitch OpenFeature provider with real-time SSE support.
@@ -47,10 +50,23 @@ export class FlipswitchProvider {
   private readonly enableRealtime: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly ofrepProvider: OFREPWebProvider;
+  private readonly browserCache: BrowserCache | null;
+  private readonly enableVisibilityHandling: boolean;
+  private readonly enablePollingFallback: boolean;
+  private readonly pollingInterval: number;
+  private readonly maxSseRetries: number;
+  private readonly offlineMode: boolean;
+
   private sseClient: SseClient | null = null;
   private _status: ClientProviderStatus = ClientProviderStatus.NOT_READY;
   private eventHandlers = new Map<ClientProviderEvents, Set<EventHandler>>();
   private userEventHandlers: FlipswitchEventHandlers = {};
+  private pollingTimer: ReturnType<typeof setInterval> | null = null;
+  private sseRetryCount = 0;
+  private isPollingFallbackActive = false;
+  private onlineHandler: (() => void) | null = null;
+  private offlineHandler: (() => void) | null = null;
+  private _isOnline = true;
 
   constructor(options: FlipswitchOptions, eventHandlers?: FlipswitchEventHandlers) {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
@@ -58,6 +74,23 @@ export class FlipswitchProvider {
     this.enableRealtime = options.enableRealtime ?? true;
     this.fetchImpl = options.fetchImplementation ?? (typeof window !== 'undefined' ? fetch.bind(window) : fetch);
     this.userEventHandlers = eventHandlers ?? {};
+
+    // Browser-specific features default to enabled in browser, disabled in Node.js
+    const isBrowser = typeof window !== 'undefined';
+    this.enableVisibilityHandling = options.enableVisibilityHandling ?? isBrowser;
+    this.offlineMode = options.offlineMode ?? isBrowser;
+    this.enablePollingFallback = options.enablePollingFallback ?? true;
+    this.pollingInterval = options.pollingInterval ?? DEFAULT_POLLING_INTERVAL;
+    this.maxSseRetries = options.maxSseRetries ?? DEFAULT_MAX_SSE_RETRIES;
+
+    // Initialize browser cache if enabled
+    const persistCache = options.persistCache ?? isBrowser;
+    this.browserCache = persistCache ? new BrowserCache() : null;
+
+    // Detect initial online state
+    if (typeof navigator !== 'undefined') {
+      this._isOnline = navigator.onLine;
+    }
 
     // Build headers array
     const headers: [string, string][] = [
@@ -70,10 +103,12 @@ export class FlipswitchProvider {
 
     // Create underlying OFREP provider for flag evaluation
     // Note: OFREPWebProvider automatically appends /ofrep/v1 to the baseUrl
+    // Disable OFREP polling - we use SSE for real-time updates instead
     this.ofrepProvider = new OFREPWebProvider({
       baseUrl: this.baseUrl,
       fetchImplementation: this.fetchImpl,
       headers,
+      pollInterval: 0, // Disable polling - SSE handles real-time updates
     });
   }
 
@@ -158,6 +193,17 @@ export class FlipswitchProvider {
   async initialize(context?: EvaluationContext): Promise<void> {
     this._status = ClientProviderStatus.NOT_READY;
 
+    // Setup offline/online handling for browsers
+    this.setupOfflineHandling();
+
+    // If offline, use cached data and mark as stale
+    if (!this._isOnline && this.offlineMode) {
+      console.warn('[Flipswitch] Starting in offline mode - using cached flag values');
+      this._status = ClientProviderStatus.STALE;
+      this.emit(ClientProviderEvents.Stale);
+      return;
+    }
+
     // Initialize the underlying OFREP provider
     try {
       await this.ofrepProvider.initialize(context);
@@ -201,13 +247,135 @@ export class FlipswitchProvider {
   }
 
   /**
+   * Setup online/offline event handling.
+   */
+  private setupOfflineHandling(): void {
+    if (typeof window === 'undefined' || !this.offlineMode) return;
+
+    this.onlineHandler = () => {
+      this._isOnline = true;
+      console.info('[Flipswitch] Connection restored - refreshing flags');
+
+      // Reconnect SSE if it was disconnected
+      if (this.enableRealtime && this.sseClient) {
+        this.sseClient.resume();
+      }
+
+      // Refresh flags
+      this.refreshFlags();
+    };
+
+    this.offlineHandler = () => {
+      this._isOnline = false;
+      console.warn('[Flipswitch] Connection lost - serving cached values');
+
+      // Pause SSE to avoid connection errors
+      if (this.sseClient) {
+        this.sseClient.pause();
+      }
+
+      // Stop polling if active
+      this.stopPolling();
+
+      // Mark as stale but keep serving cached values
+      if (this._status !== ClientProviderStatus.STALE) {
+        this._status = ClientProviderStatus.STALE;
+        this.emit(ClientProviderEvents.Stale);
+      }
+    };
+
+    window.addEventListener('online', this.onlineHandler);
+    window.addEventListener('offline', this.offlineHandler);
+  }
+
+  /**
+   * Refresh flags from the server.
+   */
+  private async refreshFlags(): Promise<void> {
+    try {
+      await this.ofrepProvider.onContextChange?.({}, {});
+
+      if (this._status === ClientProviderStatus.STALE) {
+        this._status = ClientProviderStatus.READY;
+        this.emit(ClientProviderEvents.Ready);
+      }
+
+      this.emit(ClientProviderEvents.ConfigurationChanged);
+    } catch (error) {
+      console.warn('[Flipswitch] Failed to refresh flags:', error);
+    }
+  }
+
+  /**
    * Called when the provider is shut down.
    */
   async onClose(): Promise<void> {
+    // Cleanup SSE client
     this.sseClient?.close();
     this.sseClient = null;
+
+    // Cleanup polling
+    this.stopPolling();
+
+    // Cleanup online/offline handlers
+    if (typeof window !== 'undefined') {
+      if (this.onlineHandler) {
+        window.removeEventListener('online', this.onlineHandler);
+        this.onlineHandler = null;
+      }
+      if (this.offlineHandler) {
+        window.removeEventListener('offline', this.offlineHandler);
+        this.offlineHandler = null;
+      }
+    }
+
     await this.ofrepProvider.onClose?.();
     this._status = ClientProviderStatus.NOT_READY;
+  }
+
+  /**
+   * Stop the polling fallback.
+   */
+  private stopPolling(): void {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+      this.isPollingFallbackActive = false;
+    }
+  }
+
+  /**
+   * Start polling fallback when SSE fails.
+   */
+  private startPollingFallback(): void {
+    if (this.isPollingFallbackActive || !this.enablePollingFallback) return;
+
+    console.info(`[Flipswitch] Starting polling fallback (interval: ${this.pollingInterval}ms)`);
+    this.isPollingFallbackActive = true;
+
+    this.pollingTimer = setInterval(async () => {
+      if (!this._isOnline) return;
+
+      try {
+        await this.refreshFlags();
+      } catch (error) {
+        console.warn('[Flipswitch] Polling refresh failed:', error);
+      }
+    }, this.pollingInterval);
+  }
+
+  /**
+   * Check if the provider is currently online.
+   */
+  isOnline(): boolean {
+    return this._isOnline;
+  }
+
+  /**
+   * Check if polling fallback is active.
+   */
+  isPollingActive(): boolean {
+    return this.isPollingFallbackActive;
   }
 
   /**
@@ -225,14 +393,33 @@ export class FlipswitchProvider {
         this.userEventHandlers.onConnectionStatusChange?.(status);
 
         if (status === 'error') {
+          this.sseRetryCount++;
+
+          // Check if we should fall back to polling
+          if (this.sseRetryCount >= this.maxSseRetries && this.enablePollingFallback) {
+            console.warn(`[Flipswitch] SSE failed after ${this.sseRetryCount} retries - falling back to polling`);
+            this.startPollingFallback();
+          }
+
           this._status = ClientProviderStatus.STALE;
           this.emit(ClientProviderEvents.Stale);
-        } else if (status === 'connected' && this._status === ClientProviderStatus.STALE) {
-          this._status = ClientProviderStatus.READY;
-          this.emit(ClientProviderEvents.Ready);
+        } else if (status === 'connected') {
+          // SSE connected - reset retry count and stop polling fallback
+          this.sseRetryCount = 0;
+
+          if (this.isPollingFallbackActive) {
+            console.info('[Flipswitch] SSE reconnected - stopping polling fallback');
+            this.stopPolling();
+          }
+
+          if (this._status === ClientProviderStatus.STALE) {
+            this._status = ClientProviderStatus.READY;
+            this.emit(ClientProviderEvents.Ready);
+          }
         }
       },
-      telemetryHeaders
+      telemetryHeaders,
+      this.enableVisibilityHandling
     );
 
     this.sseClient.connect();
@@ -252,10 +439,30 @@ export class FlipswitchProvider {
 
   /**
    * Handle a flag change event from SSE.
-   * Emits PROVIDER_CONFIGURATION_CHANGED to trigger re-evaluation.
+   * Triggers OFREP cache refresh, updates browser cache, and emits PROVIDER_CONFIGURATION_CHANGED.
    */
-  private handleFlagChange(event: FlagChangeEvent): void {
+  private async handleFlagChange(event: FlagChangeEvent): Promise<void> {
     this.userEventHandlers.onFlagChange?.(event);
+
+    // Invalidate browser cache for the changed flag(s)
+    if (this.browserCache) {
+      if (event.flagKey) {
+        this.browserCache.invalidate(event.flagKey);
+      } else {
+        // Full invalidation
+        this.browserCache.invalidate();
+      }
+    }
+
+    // Trigger OFREP provider to refresh its cache
+    // The onContextChange method forces the provider to re-fetch flags
+    try {
+      await this.ofrepProvider.onContextChange?.({}, {});
+    } catch (error) {
+      // Log but don't fail - the stale data is still usable
+      console.warn('[Flipswitch] Failed to refresh flags after SSE event:', error);
+    }
+
     // Emit configuration changed event - OpenFeature clients will re-evaluate flags
     this.emit(ClientProviderEvents.ConfigurationChanged);
   }

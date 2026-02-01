@@ -29,11 +29,13 @@
 export { FlipswitchProvider } from './provider';
 export { SseClient } from './sse-client';
 export { FlagCache } from './cache';
+export { BrowserCache } from './browser-cache';
 export type {
   FlipswitchOptions,
   FlagChangeEvent,
   FlagUpdatedEvent,
   ConfigUpdatedEvent,
+  ApiKeyRotatedEvent,
   FlagEvent,
   SseConnectionStatus,
   FlipswitchEventHandlers,
