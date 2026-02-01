@@ -267,12 +267,16 @@ export class SseClient {
         };
         this.onFlagChange(event);
       } else if (eventType === 'api-key-rotated') {
-        // API key was rotated - warning only, no cache invalidation
+        // API key was rotated or rotation was aborted
         const parsed: ApiKeyRotatedEvent = JSON.parse(data);
-        console.warn(
-          `[Flipswitch] API key was rotated. Current key valid until: ${parsed.validUntil}`
-        );
-        // No cache invalidation - this is just a warning
+        if (!parsed.validUntil) {
+          console.info('[Flipswitch] API key rotation was aborted');
+        } else {
+          console.warn(
+            `[Flipswitch] API key was rotated. Current key valid until: ${parsed.validUntil}`
+          );
+        }
+        // No cache invalidation - this is just informational
       }
     } catch (error) {
       console.error(`[Flipswitch] Failed to parse ${eventType} event:`, error);

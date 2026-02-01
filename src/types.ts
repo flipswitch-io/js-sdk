@@ -99,16 +99,17 @@ export interface ConfigUpdatedEvent {
 }
 
 /**
- * Event emitted when an API key has been rotated.
+ * Event emitted when an API key has been rotated or rotation was aborted.
  */
 export interface ApiKeyRotatedEvent {
   /**
    * ISO timestamp when the current key expires.
+   * Null if the rotation was aborted.
    */
-  validUntil: string;
+  validUntil: string | null;
 
   /**
-   * ISO timestamp of when the rotation occurred.
+   * ISO timestamp of when the event occurred.
    */
   timestamp: string;
 }
