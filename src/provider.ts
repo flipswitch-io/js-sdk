@@ -293,7 +293,7 @@ export class FlipswitchProvider {
    */
   private async refreshFlags(): Promise<void> {
     try {
-      await this.ofrepProvider.onContextChange?.(undefined, {});
+      await this.ofrepProvider.onContextChange?.({}, {});
 
       if (this._status === ClientProviderStatus.STALE) {
         this._status = ClientProviderStatus.READY;
@@ -457,7 +457,7 @@ export class FlipswitchProvider {
     // Trigger OFREP provider to refresh its cache
     // The onContextChange method forces the provider to re-fetch flags
     try {
-      await this.ofrepProvider.onContextChange?.(undefined, {});
+      await this.ofrepProvider.onContextChange?.({}, {});
     } catch (error) {
       // Log but don't fail - the stale data is still usable
       console.warn('[Flipswitch] Failed to refresh flags after SSE event:', error);
