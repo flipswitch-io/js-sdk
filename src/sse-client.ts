@@ -74,7 +74,7 @@ export class SseClient {
         this.connectWithPolyfill(url);
       }
     } catch (error) {
-      console.error('[Flipswitch] Failed to establish SSE connection:', error);
+      console.warn('[Flipswitch] Failed to establish SSE connection:', error);
       this.updateStatus('error');
       this.scheduleReconnect();
     }
@@ -216,14 +216,14 @@ export class SseClient {
 
       processStream().catch((error) => {
         if (!this.closed) {
-          console.error('[Flipswitch] SSE stream error:', error);
+          console.warn('[Flipswitch] SSE stream error:', error);
           this.updateStatus('error');
           this.scheduleReconnect();
         }
       });
     } catch (error) {
       if (!this.closed) {
-        console.error('[Flipswitch] SSE connection error:', error);
+        console.warn('[Flipswitch] SSE connection error:', error);
         this.updateStatus('error');
         this.scheduleReconnect();
       }
