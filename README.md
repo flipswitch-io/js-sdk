@@ -5,15 +5,26 @@
 
 Flipswitch SDK for JavaScript/TypeScript with real-time SSE support for OpenFeature.
 
-This SDK provides an OpenFeature-compatible provider that wraps OFREP flag evaluation with automatic cache invalidation
-via Server-Sent Events (SSE). When flags change in your Flipswitch dashboard, connected clients receive updates in
-real-time.
+This SDK provides an OpenFeature-compatible provider that wraps OFREP flag evaluation with automatic cache invalidation via Server-Sent Events (SSE). When flags change in your Flipswitch dashboard, connected clients receive updates in real-time.
+
+## Overview
+
+- **OpenFeature Compatible**: Works with the OpenFeature standard for feature flags
+- **Real-Time Updates**: SSE connection delivers instant flag changes
+- **Browser Optimized**: Visibility API integration, localStorage persistence, offline support
+- **Polling Fallback**: Automatic fallback when SSE connection fails
+- **TypeScript First**: Full type definitions included
+
+## Requirements
+
+- Node.js 18+ or modern browsers (Chrome, Firefox, Safari, Edge)
+- OpenFeature SDK (`@openfeature/web-sdk` or `@openfeature/server-sdk`)
 
 ## Installation
 
 ```bash
 npm install @flipswitch-io/sdk @openfeature/web-sdk
-# or
+# or for server
 npm install @flipswitch-io/sdk @openfeature/server-sdk
 ```
 
@@ -25,18 +36,14 @@ npm install @flipswitch-io/sdk @openfeature/server-sdk
 import { FlipswitchProvider } from '@flipswitch-io/sdk';
 import { OpenFeature } from '@openfeature/web-sdk';
 
-// Only API key is required
 const provider = new FlipswitchProvider({
   apiKey: 'your-environment-api-key'
 });
 
-// Register with OpenFeature
 await OpenFeature.setProviderAndWait(provider);
-
-// Get a client and evaluate flags
 const client = OpenFeature.getClient();
+
 const darkMode = await client.getBooleanValue('dark-mode', false);
-const welcomeMessage = await client.getStringValue('welcome-message', 'Hello!');
 ```
 
 ### Node.js (Server)
@@ -52,7 +59,6 @@ const provider = new FlipswitchProvider({
 await OpenFeature.setProviderAndWait(provider);
 const client = OpenFeature.getClient();
 
-// Evaluate with context
 const context = {
   targetingKey: 'user-123',
   email: 'user@example.com',
@@ -69,57 +75,174 @@ const showFeature = await client.getBooleanValue('new-feature', false, context);
 | `apiKey` | `string` | *required* | Environment API key from dashboard |
 | `baseUrl` | `string` | `https://api.flipswitch.io` | Your Flipswitch server URL |
 | `enableRealtime` | `boolean` | `true` | Enable SSE for real-time flag updates |
-| `pollingInterval` | `number` | `30000` | Cache TTL in milliseconds |
 | `fetchImplementation` | `typeof fetch` | `fetch` | Custom fetch function |
+| `persistCache` | `boolean` | `true` (browser) | Persist flag values to localStorage |
+| `offlineMode` | `boolean` | `true` (browser) | Enable offline support with cached values |
+| `enableVisibilityHandling` | `boolean` | `true` (browser) | Pause SSE when tab is hidden |
+| `enablePollingFallback` | `boolean` | `true` | Fall back to polling when SSE fails |
+| `pollingInterval` | `number` | `30000` | Polling interval in ms (fallback mode) |
+| `maxSseRetries` | `number` | `5` | Max SSE retries before polling fallback |
 
-## Real-Time Updates
+## Usage Examples
 
-When `enableRealtime` is enabled, the SDK maintains a Server-Sent Events (SSE) connection to receive instant flag change notifications. When a flag changes:
+### Basic Flag Evaluation
 
-1. The SSE client receives a `flag-change` event
-2. The local cache is immediately invalidated
-3. Next flag evaluation fetches the fresh value
-4. OpenFeature emits a `PROVIDER_CONFIGURATION_CHANGED` event
+```typescript
+const client = OpenFeature.getClient();
 
-### Event Handlers
+// Boolean flag
+const darkMode = await client.getBooleanValue('dark-mode', false);
+
+// String flag
+const welcomeMessage = await client.getStringValue('welcome-message', 'Hello!');
+
+// Number flag
+const maxItems = await client.getNumberValue('max-items', 10);
+
+// Object flag
+const config = await client.getObjectValue('feature-config', { enabled: false });
+```
+
+### Evaluation Context
+
+Target specific users or segments:
+
+```typescript
+const context = {
+  targetingKey: 'user-123',     // Unique user identifier
+  email: 'user@example.com',
+  plan: 'premium',
+  country: 'US',
+  betaUser: true,
+};
+
+const showFeature = await client.getBooleanValue('new-feature', false, context);
+```
+
+### Real-Time Updates (SSE)
+
+The SDK automatically listens for flag changes via SSE:
 
 ```typescript
 const provider = new FlipswitchProvider(
   { apiKey: 'your-api-key' },
   {
     onFlagChange: (event) => {
-      console.log(`Flag changed: ${event.flagKey}`);
+      console.log(`Flag changed: ${event.flagKey ?? 'all flags'}`);
+      // event.flagKey is null for bulk invalidation
     },
     onConnectionStatusChange: (status) => {
       console.log(`SSE status: ${status}`);
+      // 'connecting' | 'connected' | 'disconnected' | 'error'
     },
   }
 );
-```
 
-### Connection Status
-
-```typescript
-// Check current SSE status
+// Check current status
 const status = provider.getSseStatus();
-// 'connecting' | 'connected' | 'disconnected' | 'error'
 
 // Force reconnect
 provider.reconnectSse();
 ```
 
-## React Integration
+### Bulk Flag Evaluation
+
+Evaluate all flags at once:
+
+```typescript
+const flags = await provider.evaluateAllFlags(context);
+for (const flag of flags) {
+  console.log(`${flag.key} (${flag.valueType}): ${flag.value}`);
+  console.log(`  Reason: ${flag.reason}, Variant: ${flag.variant}`);
+}
+
+// Single flag with full details
+const flag = await provider.evaluateFlag('dark-mode', context);
+if (flag) {
+  console.log(`Value: ${flag.value}`);
+  console.log(`Reason: ${flag.reason}`);
+  console.log(`Variant: ${flag.variant}`);
+}
+```
+
+## Advanced Features
+
+### Offline Support (Browser)
+
+When offline mode is enabled, the SDK:
+- Detects online/offline state via `navigator.onLine`
+- Serves cached values when offline
+- Automatically refreshes when connection is restored
+
+```typescript
+const provider = new FlipswitchProvider({
+  apiKey: 'your-api-key',
+  offlineMode: true,        // Enable offline support
+  persistCache: true,       // Persist to localStorage
+});
+
+// Check online status
+if (provider.isOnline()) {
+  console.log('Online - flags are fresh');
+} else {
+  console.log('Offline - serving cached values');
+}
+```
+
+### Visibility API Integration (Browser)
+
+The SDK automatically pauses SSE when the browser tab is hidden to save resources:
+
+```typescript
+const provider = new FlipswitchProvider({
+  apiKey: 'your-api-key',
+  enableVisibilityHandling: true, // default: true in browsers
+});
+
+// Connection is paused when tab is hidden
+// Connection resumes when tab becomes visible
+```
+
+### Polling Fallback
+
+When SSE connection fails repeatedly, the SDK falls back to polling:
+
+```typescript
+const provider = new FlipswitchProvider({
+  apiKey: 'your-api-key',
+  enablePollingFallback: true, // default: true
+  pollingInterval: 30000,      // Poll every 30 seconds
+  maxSseRetries: 5,            // Fall back after 5 failed SSE attempts
+});
+
+// Check if polling is active
+if (provider.isPollingActive()) {
+  console.log('Polling fallback is active');
+}
+```
+
+### Custom HTTP Client
+
+Provide a custom fetch implementation for testing or special requirements:
+
+```typescript
+import nodeFetch from 'node-fetch';
+
+const provider = new FlipswitchProvider({
+  apiKey: 'your-api-key',
+  fetchImplementation: nodeFetch as unknown as typeof fetch,
+});
+```
+
+## Framework Integration
+
+### React
 
 ```tsx
 import { OpenFeature, OpenFeatureProvider, useFlag } from '@openfeature/react-sdk';
 import { FlipswitchProvider } from '@flipswitch-io/sdk';
 
-// Initialize provider
-const provider = new FlipswitchProvider({
-  baseUrl: 'https://api.flipswitch.io',
-  apiKey: 'your-api-key',
-});
-
+const provider = new FlipswitchProvider({ apiKey: 'your-api-key' });
 await OpenFeature.setProviderAndWait(provider);
 
 function App() {
@@ -131,7 +254,9 @@ function App() {
 }
 
 function MyComponent() {
-  const { value: darkMode } = useFlag('dark-mode', false);
+  const { value: darkMode, isLoading } = useFlag('dark-mode', false);
+
+  if (isLoading) return <div>Loading...</div>;
 
   return (
     <div className={darkMode ? 'dark' : 'light'}>
@@ -141,48 +266,169 @@ function MyComponent() {
 }
 ```
 
-## Bulk Flag Evaluation
+### Vue 3
 
-Evaluate all flags at once or get detailed evaluation results:
+```vue
+<script setup>
+import { ref, onMounted } from 'vue';
+import { OpenFeature } from '@openfeature/web-sdk';
+import { FlipswitchProvider } from '@flipswitch-io/sdk';
+
+const darkMode = ref(false);
+const client = OpenFeature.getClient();
+
+onMounted(async () => {
+  const provider = new FlipswitchProvider({ apiKey: 'your-api-key' });
+  await OpenFeature.setProviderAndWait(provider);
+  darkMode.value = await client.getBooleanValue('dark-mode', false);
+});
+</script>
+
+<template>
+  <div :class="darkMode ? 'dark' : 'light'">
+    Dark mode is {{ darkMode ? 'enabled' : 'disabled' }}
+  </div>
+</template>
+```
+
+## Error Handling
+
+The SDK handles errors gracefully and provides fallback behavior:
 
 ```typescript
-// Evaluate all flags
-const flags = await provider.evaluateAllFlags(context);
-for (const flag of flags) {
-  console.log(`${flag.key} (${flag.valueType}): ${flag.value}`);
+try {
+  const provider = new FlipswitchProvider({ apiKey: 'your-api-key' });
+  await OpenFeature.setProviderAndWait(provider);
+} catch (error) {
+  console.error('Failed to initialize provider:', error);
+  // Provider will use default values
 }
 
-// Evaluate a single flag with full details
-const flag = await provider.evaluateFlag('dark-mode', context);
-if (flag) {
-  console.log(`Value: ${flag.value}, Reason: ${flag.reason}, Variant: ${flag.variant}`);
+// Flag evaluation never throws - returns default value on error
+const value = await client.getBooleanValue('my-flag', false);
+```
+
+## Logging & Debugging
+
+Enable console logging to debug issues:
+
+```typescript
+// The SDK logs to console with [Flipswitch] prefix
+// Look for messages like:
+// [Flipswitch] SSE connection established
+// [Flipswitch] Flag changed: my-flag
+// [Flipswitch] SSE connection error, retrying...
+// [Flipswitch] Starting polling fallback
+```
+
+## Testing
+
+Mock the provider in your tests:
+
+```typescript
+import { OpenFeature, InMemoryProvider } from '@openfeature/web-sdk';
+
+// Use InMemoryProvider for testing
+const testProvider = new InMemoryProvider({
+  'dark-mode': { defaultVariant: 'on', variants: { on: true, off: false } },
+  'max-items': { defaultVariant: 'default', variants: { default: 10 } },
+});
+
+await OpenFeature.setProviderAndWait(testProvider);
+
+// Your tests can now evaluate flags without network calls
+```
+
+## API Reference
+
+### FlipswitchProvider
+
+```typescript
+class FlipswitchProvider {
+  constructor(options: FlipswitchOptions, eventHandlers?: FlipswitchEventHandlers);
+
+  // OpenFeature Provider interface
+  initialize(context?: EvaluationContext): Promise<void>;
+  onClose(): Promise<void>;
+  resolveBooleanEvaluation(flagKey: string, defaultValue: boolean, context: EvaluationContext): ResolutionDetails<boolean>;
+  resolveStringEvaluation(flagKey: string, defaultValue: string, context: EvaluationContext): ResolutionDetails<string>;
+  resolveNumberEvaluation(flagKey: string, defaultValue: number, context: EvaluationContext): ResolutionDetails<number>;
+  resolveObjectEvaluation<T>(flagKey: string, defaultValue: T, context: EvaluationContext): ResolutionDetails<T>;
+
+  // Flipswitch-specific methods
+  getSseStatus(): SseConnectionStatus;
+  reconnectSse(): void;
+  isOnline(): boolean;
+  isPollingActive(): boolean;
+  evaluateAllFlags(context: EvaluationContext): Promise<FlagEvaluation[]>;
+  evaluateFlag(flagKey: string, context: EvaluationContext): Promise<FlagEvaluation | null>;
 }
 ```
 
-## Reconnection Strategy
+### Types
 
-The SSE client automatically reconnects with exponential backoff:
-- Initial delay: 1 second
-- Maximum delay: 30 seconds
-- Backoff multiplier: 2x
+```typescript
+interface FlipswitchOptions {
+  apiKey: string;
+  baseUrl?: string;
+  enableRealtime?: boolean;
+  fetchImplementation?: typeof fetch;
+  persistCache?: boolean;
+  offlineMode?: boolean;
+  enableVisibilityHandling?: boolean;
+  enablePollingFallback?: boolean;
+  pollingInterval?: number;
+  maxSseRetries?: number;
+}
 
-When reconnected, the provider status changes from `STALE` back to `READY`.
+type SseConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
+
+interface FlagChangeEvent {
+  flagKey: string | null;
+  timestamp: string;
+}
+
+interface FlagEvaluation {
+  key: string;
+  value: unknown;
+  valueType: 'boolean' | 'string' | 'number' | 'object' | 'array' | 'null' | 'unknown';
+  reason: string | null;
+  variant: string | null;
+}
+```
+
+## Troubleshooting
+
+### SSE Connection Fails
+
+- Check that your API key is valid
+- Verify your server URL is correct
+- Check for network/firewall issues blocking SSE
+- The SDK will automatically fall back to polling
+
+### Flags Not Updating in Real-Time
+
+- Ensure `enableRealtime` is not set to `false`
+- Check SSE status with `provider.getSseStatus()`
+- Verify the SSE endpoint is accessible
+- Check browser console for error messages
+
+### Offline Mode Not Working
+
+- Verify `offlineMode` is enabled
+- Check that localStorage is available
+- Clear browser storage if cache is corrupted
 
 ## Demo
 
-A complete working demo is included. To run it:
+Run the included demo:
 
 ```bash
 npm install
 npm run demo -- <your-api-key>
 ```
 
-The demo will:
-1. Connect to Flipswitch and validate your API key
-2. Load and display all flags with their types and values
-3. Listen for real-time flag changes and display updates
-
-See [examples/demo.ts](./examples/demo.ts) for the full source.
+The demo will connect, display all flags, and listen for real-time updates.
 
 ## Contributing
 
