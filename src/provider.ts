@@ -10,10 +10,10 @@ import { OFREPWebProvider } from '@openfeature/ofrep-web-provider';
 import { SseClient } from './sse-client';
 import { BrowserCache } from './browser-cache';
 import type { FlipswitchOptions, FlagChangeEvent, SseConnectionStatus, FlipswitchEventHandlers, FlagEvaluation } from './types';
+import { version as SDK_VERSION } from '../package.json';
 type EventHandler = () => void;
 
 const DEFAULT_BASE_URL = 'https://api.flipswitch.io';
-const SDK_VERSION = '0.1.2';
 const DEFAULT_POLLING_INTERVAL = 30000; // 30 seconds
 const DEFAULT_MAX_SSE_RETRIES = 5;
 
