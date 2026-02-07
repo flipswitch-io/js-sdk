@@ -6,12 +6,12 @@ import {
   type ProviderMetadata,
   type ResolutionDetails,
 } from '@openfeature/core';
+import { OpenFeatureEventEmitter, type ProviderEmittableEvents } from '@openfeature/web-sdk';
 import { OFREPWebProvider } from '@openfeature/ofrep-web-provider';
 import { SseClient } from './sse-client';
 import { BrowserCache } from './browser-cache';
 import type { FlipswitchOptions, FlagChangeEvent, SseConnectionStatus, FlipswitchEventHandlers, FlagEvaluation } from './types';
 import { version as SDK_VERSION } from '../package.json';
-type EventHandler = () => void;
 
 const DEFAULT_BASE_URL = 'https://api.flipswitch.io';
 const DEFAULT_POLLING_INTERVAL = 30000; // 30 seconds
@@ -44,6 +44,7 @@ export class FlipswitchProvider {
   };
 
   readonly rulesFromFlagValue = false;
+  readonly events = new OpenFeatureEventEmitter();
 
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -60,7 +61,6 @@ export class FlipswitchProvider {
   private sseClient: SseClient | null = null;
   private _status: ClientProviderStatus = ClientProviderStatus.NOT_READY;
   private _currentContext: EvaluationContext = {};
-  private eventHandlers = new Map<ClientProviderEvents, Set<EventHandler>>();
   private userEventHandlers: FlipswitchEventHandlers = {};
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
   private sseRetryCount = 0;
@@ -486,23 +486,10 @@ export class FlipswitchProvider {
   }
 
   /**
-   * Emit an event to registered handlers.
+   * Emit an event through the OpenFeature event emitter.
    */
-  private emit(event: ClientProviderEvents): void {
-    const handlers = this.eventHandlers.get(event);
-    if (handlers) {
-      Array.from(handlers).forEach(handler => handler());
-    }
-  }
-
-  /**
-   * Register an event handler.
-   */
-  onProviderEvent?(event: ClientProviderEvents, handler: EventHandler): void {
-    if (!this.eventHandlers.has(event)) {
-      this.eventHandlers.set(event, new Set());
-    }
-    this.eventHandlers.get(event)!.add(handler);
+  private emit(event: ProviderEmittableEvents): void {
+    this.events.emit(event);
   }
 
   // ===============================
