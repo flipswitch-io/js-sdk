@@ -59,6 +59,7 @@ export class FlipswitchProvider {
 
   private sseClient: SseClient | null = null;
   private _status: ClientProviderStatus = ClientProviderStatus.NOT_READY;
+  private _currentContext: EvaluationContext = {};
   private eventHandlers = new Map<ClientProviderEvents, Set<EventHandler>>();
   private userEventHandlers: FlipswitchEventHandlers = {};
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
@@ -192,6 +193,7 @@ export class FlipswitchProvider {
    */
   async initialize(context?: EvaluationContext): Promise<void> {
     this._status = ClientProviderStatus.NOT_READY;
+    this._currentContext = context ?? {};
 
     // Setup offline/online handling for browsers
     this.setupOfflineHandling();
@@ -247,6 +249,22 @@ export class FlipswitchProvider {
   }
 
   /**
+   * Called by OpenFeature when the global evaluation context changes.
+   * This happens when the user logs in/out and the targeting key changes.
+   */
+  async onContextChange(oldContext: EvaluationContext, newContext: EvaluationContext): Promise<void> {
+    this._currentContext = newContext;
+
+    // Invalidate browser cache fully since user identity changed
+    this.browserCache?.invalidate();
+
+    // Forward context change to the underlying OFREP provider
+    await this.ofrepProvider.onContextChange?.(oldContext, newContext);
+
+    this.emit(ClientProviderEvents.ConfigurationChanged);
+  }
+
+  /**
    * Setup online/offline event handling.
    */
   private setupOfflineHandling(): void {
@@ -293,7 +311,7 @@ export class FlipswitchProvider {
    */
   private async refreshFlags(): Promise<void> {
     try {
-      await this.ofrepProvider.onContextChange?.({}, {});
+      await this.ofrepProvider.onContextChange?.(this._currentContext, this._currentContext);
 
       if (this._status === ClientProviderStatus.STALE) {
         this._status = ClientProviderStatus.READY;
@@ -457,7 +475,7 @@ export class FlipswitchProvider {
     // Trigger OFREP provider to refresh its cache
     // The onContextChange method forces the provider to re-fetch flags
     try {
-      await this.ofrepProvider.onContextChange?.({}, {});
+      await this.ofrepProvider.onContextChange?.(this._currentContext, this._currentContext);
     } catch (error) {
       // Log but don't fail - the stale data is still usable
       console.warn('[Flipswitch] Failed to refresh flags after SSE event:', error);
