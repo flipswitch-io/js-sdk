@@ -10,7 +10,7 @@ This SDK provides an OpenFeature-compatible provider that wraps OFREP flag evalu
 
 ## Overview
 
-- **OpenFeature Compatible**: Works with the OpenFeature standard for feature flags
+- **OpenFeature Compatible**: Works with the OpenFeature standard for feature flags 
 - **Real-Time Updates**: SSE connection delivers instant flag changes
 - **Browser Optimized**: Visibility API integration, localStorage persistence, offline support
 - **Polling Fallback**: Automatic fallback when SSE connection fails
