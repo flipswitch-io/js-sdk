@@ -746,7 +746,7 @@ describe('FlipswitchProvider', () => {
       });
 
       const handler = vi.fn();
-      provider.onProviderEvent?.(ClientProviderEvents.ConfigurationChanged, handler);
+      provider.events.addHandler(ClientProviderEvents.ConfigurationChanged, handler);
 
       await provider.onContextChange(
         { targetingKey: 'old-user' },
@@ -793,7 +793,7 @@ describe('FlipswitchProvider', () => {
       vi.restoreAllMocks();
     });
 
-    it('should register and fire handler via onProviderEvent', async () => {
+    it('should register and fire handler via events.addHandler', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ flags: [] }),
@@ -807,7 +807,7 @@ describe('FlipswitchProvider', () => {
       });
 
       const handler = vi.fn();
-      provider.onProviderEvent?.(ClientProviderEvents.Ready, handler);
+      provider.events.addHandler(ClientProviderEvents.Ready, handler);
 
       await provider.initialize();
 
@@ -1371,7 +1371,7 @@ describe('FlipswitchProvider', () => {
         onFlagChange,
       });
 
-      provider.onProviderEvent?.(ClientProviderEvents.ConfigurationChanged, configChangedHandler);
+      provider.events.addHandler(ClientProviderEvents.ConfigurationChanged, configChangedHandler);
 
       await provider.initialize({ targetingKey: 'user-1' });
       await new Promise((r) => setTimeout(r, 50));
