@@ -391,6 +391,196 @@ describe('SseClient - Unit Tests', () => {
     });
   });
 
+  describe('pause / resume', () => {
+    let sseServer: ReturnType<typeof createSseServer>;
+    let client: SseClient;
+    let onStatusChange: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+      sseServer = createSseServer();
+      await sseServer.listen();
+      onStatusChange = vi.fn();
+    });
+
+    afterEach(async () => {
+      client?.close();
+      await sseServer.close();
+    });
+
+    it('pause disconnects and sets paused state', async () => {
+      client = new SseClient(
+        sseServer.getUrl(),
+        'test-key',
+        vi.fn(),
+        onStatusChange,
+        undefined,
+        false,
+      );
+
+      client.connect();
+      await sseServer.waitForConnection();
+      await wait(50);
+
+      expect(client.getStatus()).toBe('connected');
+
+      client.pause();
+
+      expect(client.isPaused()).toBe(true);
+      expect(client.getStatus()).toBe('disconnected');
+    });
+
+    it('resume reconnects after pause', async () => {
+      client = new SseClient(
+        sseServer.getUrl(),
+        'test-key',
+        vi.fn(),
+        onStatusChange,
+        undefined,
+        false,
+      );
+
+      client.connect();
+      await sseServer.waitForConnection();
+      await wait(50);
+
+      client.pause();
+      expect(client.isPaused()).toBe(true);
+
+      client.resume();
+      expect(client.isPaused()).toBe(false);
+
+      await sseServer.waitForConnection();
+      await wait(50);
+
+      expect(client.getStatus()).toBe('connected');
+    });
+
+    it('isPaused returns false initially', () => {
+      client = new SseClient(
+        sseServer.getUrl(),
+        'test-key',
+        vi.fn(),
+        undefined,
+        undefined,
+        false,
+      );
+
+      expect(client.isPaused()).toBe(false);
+    });
+
+    it('pause is no-op when already paused', async () => {
+      client = new SseClient(
+        sseServer.getUrl(),
+        'test-key',
+        vi.fn(),
+        onStatusChange,
+        undefined,
+        false,
+      );
+
+      client.connect();
+      await sseServer.waitForConnection();
+      await wait(50);
+
+      client.pause();
+      const statusAfterFirstPause = client.getStatus();
+
+      // Second pause should not throw or change state
+      client.pause();
+      expect(client.getStatus()).toBe(statusAfterFirstPause);
+      expect(client.isPaused()).toBe(true);
+    });
+  });
+
+  describe('api-key-rotated edge cases', () => {
+    let sseServer: ReturnType<typeof createSseServer>;
+    let client: SseClient;
+
+    beforeEach(async () => {
+      sseServer = createSseServer();
+      await sseServer.listen();
+    });
+
+    afterEach(async () => {
+      client?.close();
+      await sseServer.close();
+    });
+
+    it('api-key-rotated with null validUntil logs aborted', async () => {
+      const onFlagChange = vi.fn();
+
+      client = new SseClient(
+        sseServer.getUrl(),
+        'test-key',
+        onFlagChange,
+        undefined,
+        undefined,
+        false,
+      );
+
+      client.connect();
+      await sseServer.waitForConnection();
+      await wait(50);
+
+      sseServer.sendEvent('api-key-rotated', {
+        validUntil: null,
+        timestamp: '2025-01-01T00:00:00Z',
+      });
+      await wait(50);
+
+      expect(console.info).toHaveBeenCalledWith(
+        '[Flipswitch] API key rotation was aborted',
+      );
+      expect(onFlagChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('close cleanup', () => {
+    let sseServer: ReturnType<typeof createSseServer>;
+    let client: SseClient;
+
+    beforeEach(async () => {
+      sseServer = createSseServer();
+      await sseServer.listen();
+    });
+
+    afterEach(async () => {
+      client?.close();
+      await sseServer.close();
+    });
+
+    it('close cleans up and prevents reconnection', async () => {
+      const onStatusChange = vi.fn();
+
+      client = new SseClient(
+        sseServer.getUrl(),
+        'test-key',
+        vi.fn(),
+        onStatusChange,
+        undefined,
+        false,
+      );
+
+      client.connect();
+      await sseServer.waitForConnection();
+      await wait(50);
+
+      expect(client.getStatus()).toBe('connected');
+
+      client.close();
+
+      expect(client.getStatus()).toBe('disconnected');
+      expect(onStatusChange).toHaveBeenCalledWith('disconnected');
+
+      // Drop connection — should not trigger reconnect
+      sseServer.dropConnection();
+      await wait(200);
+
+      // Still disconnected, no reconnect attempt
+      expect(client.getStatus()).toBe('disconnected');
+    });
+  });
+
   describe('close', () => {
     let sseServer: ReturnType<typeof createSseServer>;
     let client: SseClient;

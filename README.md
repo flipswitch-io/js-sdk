@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/flipswitch-io/js-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/flipswitch-io/js-sdk/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@flipswitch-io/sdk.svg)](https://www.npmjs.com/package/@flipswitch-io/sdk)
+[![codecov](https://codecov.io/gh/flipswitch-io/js-sdk/branch/main/graph/badge.svg)](https://codecov.io/gh/flipswitch-io/js-sdk)
 
 Flipswitch SDK for JavaScript/TypeScript with real-time SSE support for OpenFeature.
 
