@@ -214,6 +214,32 @@ describe('BrowserCache', () => {
     expect(mockStorage.getItem('other-app-key')).toBe('some-value');
   });
 
+  // --- localStorage unavailable ---
+
+  it('isAvailable returns false when setItem throws', () => {
+    vi.unstubAllGlobals();
+    const throwingStorage = createMockLocalStorage();
+    throwingStorage.setItem = () => { throw new Error('QuotaExceededError'); };
+    vi.stubGlobal('window', { localStorage: throwingStorage });
+
+    const cache = new BrowserCache();
+    expect(cache.isAvailable()).toBe(false);
+  });
+
+  // --- invalid JSON in cache ---
+
+  it('get returns null for invalid JSON in cache', () => {
+    mockStorage.setItem('flipswitch:flags:bad', 'not-valid-json{{{');
+    const cache = new BrowserCache();
+    expect(cache.get('bad')).toBeNull();
+  });
+
+  it('getMeta returns null for invalid JSON in meta key', () => {
+    mockStorage.setItem('flipswitch:meta', '{broken json!!!');
+    const cache = new BrowserCache();
+    expect(cache.getMeta()).toBeNull();
+  });
+
   // --- graceful fallback when storage is null ---
 
   it('graceful fallback when storage null', () => {

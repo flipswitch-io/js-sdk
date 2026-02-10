@@ -646,6 +646,161 @@ describe('SseClient - Unit Tests', () => {
   });
 });
 
+describe('SseClient - Additional Edge Cases', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('close existing eventSource on reconnect (connect called twice)', async () => {
+    const sseServer = createSseServer();
+    await sseServer.listen();
+
+    const client = new SseClient(
+      sseServer.getUrl(),
+      'test-key',
+      vi.fn(),
+      vi.fn(),
+      undefined,
+      false,
+    );
+
+    // First connect
+    client.connect();
+    await sseServer.waitForConnection();
+    await wait(50);
+
+    expect(sseServer.getConnectionCount()).toBe(1);
+    expect(client.getStatus()).toBe('connected');
+
+    // Drop connection and immediately reconnect via calling connect again
+    sseServer.dropConnection();
+    client.connect();
+    await sseServer.waitForConnection();
+    await wait(50);
+
+    // Second connection should have been made
+    expect(sseServer.getConnectionCount()).toBeGreaterThanOrEqual(2);
+    expect(client.getStatus()).toBe('connected');
+
+    client.close();
+    await sseServer.close();
+  });
+
+  it('non-ok fetch response triggers error status and reconnect', async () => {
+    vi.useFakeTimers();
+
+    const onStatusChange = vi.fn();
+    let fetchCallCount = 0;
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+      fetchCallCount++;
+      return Promise.resolve({ ok: false, status: 503, body: null });
+    }));
+
+    const client = new SseClient(
+      'http://localhost:9999',
+      'test-key',
+      vi.fn(),
+      onStatusChange,
+      undefined,
+      false,
+    );
+
+    client.connect();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onStatusChange).toHaveBeenCalledWith('error');
+    expect(fetchCallCount).toBe(1);
+
+    // Reconnect should be scheduled - advance past first retry delay
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchCallCount).toBe(2);
+
+    client.close();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('close clears reconnectTimeout', async () => {
+    vi.useFakeTimers();
+
+    let fetchCallCount = 0;
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+      fetchCallCount++;
+      return Promise.resolve({ ok: false, status: 500, body: null });
+    }));
+
+    const client = new SseClient(
+      'http://localhost:9999',
+      'test-key',
+      vi.fn(),
+      vi.fn(),
+      undefined,
+      false,
+    );
+
+    client.connect();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Error should have happened, reconnect scheduled
+    expect(fetchCallCount).toBe(1);
+
+    // Close before reconnect fires
+    client.close();
+
+    // Advance past the reconnect delay - should NOT trigger another fetch
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetchCallCount).toBe(1);
+
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('pause clears eventSource and sets paused state', async () => {
+    const sseServer = createSseServer();
+    await sseServer.listen();
+
+    const onStatusChange = vi.fn();
+
+    const client = new SseClient(
+      sseServer.getUrl(),
+      'test-key',
+      vi.fn(),
+      onStatusChange,
+      undefined,
+      false,
+    );
+
+    client.connect();
+    await sseServer.waitForConnection();
+    await wait(50);
+
+    expect(client.getStatus()).toBe('connected');
+
+    client.pause();
+
+    expect(client.isPaused()).toBe(true);
+    expect(client.getStatus()).toBe('disconnected');
+    expect(onStatusChange).toHaveBeenCalledWith('disconnected');
+
+    // Connect should be no-op while paused
+    client.connect();
+    expect(client.getStatus()).toBe('disconnected');
+
+    client.close();
+    await sseServer.close();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Integration Tests
 // ---------------------------------------------------------------------------

@@ -1754,4 +1754,448 @@ describe('FlipswitchProvider', () => {
       expect(provider.formatValue(3.14)).toBe('3.14');
     });
   });
+
+  // ========================================
+  // Telemetry Browser Detection Tests
+  // ========================================
+
+  describe('Telemetry Browser Detection', () => {
+    const createProviderWithHeaders = (mockFetch: ReturnType<typeof vi.fn>) => {
+      return new FlipswitchProvider({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com',
+        enableRealtime: false,
+        fetchImplementation: mockFetch,
+      });
+    };
+
+    it('should detect Chrome from userAgent', async () => {
+      const origNavigator = globalThis.navigator;
+      const origProcess = globalThis.process;
+      vi.stubGlobal('process', undefined);
+      vi.stubGlobal('navigator', {
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+        onLine: true,
+      });
+
+      let capturedHeaders: Record<string, string> = {};
+      const mockFetch = vi.fn().mockImplementation((_url: string, opts: { headers?: Record<string, string> }) => {
+        capturedHeaders = opts?.headers ?? {};
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ flags: [] }) });
+      });
+
+      const provider = createProviderWithHeaders(mockFetch);
+      await provider.evaluateAllFlags({ targetingKey: 'u' });
+
+      expect(capturedHeaders['X-Flipswitch-Runtime']).toBe('chrome/120');
+
+      vi.stubGlobal('navigator', origNavigator);
+      vi.stubGlobal('process', origProcess);
+    });
+
+    it('should detect Firefox from userAgent', async () => {
+      const origNavigator = globalThis.navigator;
+      const origProcess = globalThis.process;
+      vi.stubGlobal('process', undefined);
+      vi.stubGlobal('navigator', {
+        userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115',
+        onLine: true,
+      });
+
+      let capturedHeaders: Record<string, string> = {};
+      const mockFetch = vi.fn().mockImplementation((_url: string, opts: { headers?: Record<string, string> }) => {
+        capturedHeaders = opts?.headers ?? {};
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ flags: [] }) });
+      });
+
+      const provider = createProviderWithHeaders(mockFetch);
+      await provider.evaluateAllFlags({ targetingKey: 'u' });
+
+      expect(capturedHeaders['X-Flipswitch-Runtime']).toBe('firefox/115');
+
+      vi.stubGlobal('navigator', origNavigator);
+      vi.stubGlobal('process', origProcess);
+    });
+
+    it('should detect Safari from userAgent (no Chrome)', async () => {
+      const origNavigator = globalThis.navigator;
+      const origProcess = globalThis.process;
+      vi.stubGlobal('process', undefined);
+      vi.stubGlobal('navigator', {
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17 Safari/605.1.15',
+        onLine: true,
+      });
+
+      let capturedHeaders: Record<string, string> = {};
+      const mockFetch = vi.fn().mockImplementation((_url: string, opts: { headers?: Record<string, string> }) => {
+        capturedHeaders = opts?.headers ?? {};
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ flags: [] }) });
+      });
+
+      const provider = createProviderWithHeaders(mockFetch);
+      await provider.evaluateAllFlags({ targetingKey: 'u' });
+
+      expect(capturedHeaders['X-Flipswitch-Runtime']).toBe('safari/17');
+
+      vi.stubGlobal('navigator', origNavigator);
+      vi.stubGlobal('process', origProcess);
+    });
+
+    it('should return browser/unknown for unknown UA', async () => {
+      const origNavigator = globalThis.navigator;
+      const origProcess = globalThis.process;
+      vi.stubGlobal('process', undefined);
+      vi.stubGlobal('navigator', {
+        userAgent: 'SomeCustomBrowser/1.0',
+        onLine: true,
+      });
+
+      let capturedHeaders: Record<string, string> = {};
+      const mockFetch = vi.fn().mockImplementation((_url: string, opts: { headers?: Record<string, string> }) => {
+        capturedHeaders = opts?.headers ?? {};
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ flags: [] }) });
+      });
+
+      const provider = createProviderWithHeaders(mockFetch);
+      await provider.evaluateAllFlags({ targetingKey: 'u' });
+
+      expect(capturedHeaders['X-Flipswitch-Runtime']).toBe('browser/unknown');
+
+      vi.stubGlobal('navigator', origNavigator);
+      vi.stubGlobal('process', origProcess);
+    });
+
+    it('should detect Windows OS from userAgent', async () => {
+      const origNavigator = globalThis.navigator;
+      const origProcess = globalThis.process;
+      vi.stubGlobal('process', undefined);
+      vi.stubGlobal('navigator', {
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+        onLine: true,
+      });
+
+      let capturedHeaders: Record<string, string> = {};
+      const mockFetch = vi.fn().mockImplementation((_url: string, opts: { headers?: Record<string, string> }) => {
+        capturedHeaders = opts?.headers ?? {};
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ flags: [] }) });
+      });
+
+      const provider = createProviderWithHeaders(mockFetch);
+      await provider.evaluateAllFlags({ targetingKey: 'u' });
+
+      expect(capturedHeaders['X-Flipswitch-OS']).toMatch(/^windows\//);
+
+      vi.stubGlobal('navigator', origNavigator);
+      vi.stubGlobal('process', origProcess);
+    });
+
+    it('should detect Linux OS from userAgent', async () => {
+      const origNavigator = globalThis.navigator;
+      const origProcess = globalThis.process;
+      vi.stubGlobal('process', undefined);
+      vi.stubGlobal('navigator', {
+        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+        onLine: true,
+      });
+
+      let capturedHeaders: Record<string, string> = {};
+      const mockFetch = vi.fn().mockImplementation((_url: string, opts: { headers?: Record<string, string> }) => {
+        capturedHeaders = opts?.headers ?? {};
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ flags: [] }) });
+      });
+
+      const provider = createProviderWithHeaders(mockFetch);
+      await provider.evaluateAllFlags({ targetingKey: 'u' });
+
+      expect(capturedHeaders['X-Flipswitch-OS']).toMatch(/^linux\//);
+
+      vi.stubGlobal('navigator', origNavigator);
+      vi.stubGlobal('process', origProcess);
+    });
+
+    it('should detect ARM64 architecture from userAgent', async () => {
+      const origNavigator = globalThis.navigator;
+      const origProcess = globalThis.process;
+      vi.stubGlobal('process', undefined);
+      vi.stubGlobal('navigator', {
+        userAgent: 'Mozilla/5.0 (Macintosh; arm64 Mac OS X 10_15_7) AppleWebKit/605.1.15 Chrome/120',
+        onLine: true,
+      });
+
+      let capturedHeaders: Record<string, string> = {};
+      const mockFetch = vi.fn().mockImplementation((_url: string, opts: { headers?: Record<string, string> }) => {
+        capturedHeaders = opts?.headers ?? {};
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ flags: [] }) });
+      });
+
+      const provider = createProviderWithHeaders(mockFetch);
+      await provider.evaluateAllFlags({ targetingKey: 'u' });
+
+      expect(capturedHeaders['X-Flipswitch-OS']).toMatch(/\/arm64$/);
+
+      vi.stubGlobal('navigator', origNavigator);
+      vi.stubGlobal('process', origProcess);
+    });
+  });
+
+  // ========================================
+  // Online/Offline Handling Tests
+  // ========================================
+
+  describe('Online/Offline Handling', () => {
+    let windowListeners: Map<string, Function>;
+    let origWindow: typeof globalThis.window;
+
+    beforeEach(() => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.spyOn(console, 'info').mockImplementation(() => {});
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      windowListeners = new Map();
+      origWindow = globalThis.window;
+
+      vi.stubGlobal('window', {
+        addEventListener: (type: string, handler: Function) => {
+          windowListeners.set(type, handler);
+        },
+        removeEventListener: vi.fn(),
+        localStorage: null,
+      });
+    });
+
+    afterEach(() => {
+      vi.stubGlobal('window', origWindow);
+      vi.restoreAllMocks();
+    });
+
+    it('online event should trigger refreshFlags', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ flags: [] }),
+      });
+
+      const provider = new FlipswitchProvider({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com',
+        enableRealtime: false,
+        offlineMode: true,
+        fetchImplementation: mockFetch,
+      });
+
+      // Initialize to set up online/offline handlers
+      vi.stubGlobal('navigator', { onLine: true });
+      await provider.initialize();
+
+      // Trigger the online handler
+      const onlineHandler = windowListeners.get('online');
+      if (onlineHandler) {
+        onlineHandler();
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      expect(provider.isOnline()).toBe(true);
+      await provider.onClose();
+      vi.unstubAllGlobals();
+    });
+
+    it('offline event should mark status as STALE', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ flags: [] }),
+      });
+
+      const provider = new FlipswitchProvider({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com',
+        enableRealtime: false,
+        offlineMode: true,
+        fetchImplementation: mockFetch,
+      });
+
+      vi.stubGlobal('navigator', { onLine: true });
+      await provider.initialize();
+
+      // Trigger the offline handler
+      const offlineHandler = windowListeners.get('offline');
+      if (offlineHandler) {
+        offlineHandler();
+      }
+
+      expect(provider.isOnline()).toBe(false);
+      expect(provider.status).toBe('STALE');
+      await provider.onClose();
+      vi.unstubAllGlobals();
+    });
+
+    it('offline should stop active polling', async () => {
+      // Set up SSE to fail to trigger polling fallback
+      vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+        return Promise.resolve({ ok: false, status: 500, body: null });
+      }));
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ flags: [] }),
+      });
+
+      vi.stubGlobal('navigator', { onLine: true });
+
+      const provider = new FlipswitchProvider({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com',
+        enableRealtime: true,
+        enablePollingFallback: true,
+        maxSseRetries: 1,
+        offlineMode: true,
+        fetchImplementation: mockFetch,
+      });
+
+      await provider.initialize();
+
+      // Wait for SSE error + polling fallback activation
+      const waitForPolling = async () => {
+        for (let i = 0; i < 20; i++) {
+          if (provider.isPollingActive()) return;
+          await new Promise(r => setTimeout(r, 50));
+        }
+      };
+      await waitForPolling();
+
+      expect(provider.isPollingActive()).toBe(true);
+
+      // Trigger offline handler
+      const offlineHandler = windowListeners.get('offline');
+      if (offlineHandler) {
+        offlineHandler();
+      }
+
+      // Polling should be stopped
+      expect(provider.isPollingActive()).toBe(false);
+      await provider.onClose();
+      vi.unstubAllGlobals();
+    });
+
+    it('refreshFlags transitions STALE to READY', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ flags: [] }),
+      });
+
+      const provider = new FlipswitchProvider({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com',
+        enableRealtime: false,
+        offlineMode: true,
+        fetchImplementation: mockFetch,
+      });
+
+      vi.stubGlobal('navigator', { onLine: true });
+      await provider.initialize();
+
+      // Set offline to make it STALE
+      const offlineHandler = windowListeners.get('offline');
+      if (offlineHandler) offlineHandler();
+      expect(provider.status).toBe('STALE');
+
+      // Come back online
+      const onlineHandler = windowListeners.get('online');
+      if (onlineHandler) {
+        onlineHandler();
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      expect(provider.status).toBe('READY');
+      await provider.onClose();
+      vi.unstubAllGlobals();
+    });
+
+    it('onClose removes window event listeners', async () => {
+      const removeEventListener = vi.fn();
+      vi.stubGlobal('window', {
+        addEventListener: (type: string, handler: Function) => {
+          windowListeners.set(type, handler);
+        },
+        removeEventListener,
+        localStorage: null,
+      });
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ flags: [] }),
+      });
+
+      const provider = new FlipswitchProvider({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com',
+        enableRealtime: false,
+        offlineMode: true,
+        fetchImplementation: mockFetch,
+      });
+
+      vi.stubGlobal('navigator', { onLine: true });
+      await provider.initialize();
+      await provider.onClose();
+
+      expect(removeEventListener).toHaveBeenCalledWith('online', expect.any(Function));
+      expect(removeEventListener).toHaveBeenCalledWith('offline', expect.any(Function));
+      vi.unstubAllGlobals();
+    });
+  });
+
+  // ========================================
+  // handleFlagChange Error Paths
+  // ========================================
+
+  describe('handleFlagChange error paths', () => {
+    beforeEach(() => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.spyOn(console, 'info').mockImplementation(() => {});
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('handleFlagChange still emits ConfigurationChanged after OFREP error', async () => {
+      let streamController: WritableStreamDefaultWriter<Uint8Array>;
+
+      vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+        const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+        streamController = writable.getWriter();
+        return Promise.resolve({ ok: true, body: readable, status: 200 });
+      }));
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ flags: [] }),
+      });
+
+      const configChangedHandler = vi.fn();
+
+      const provider = new FlipswitchProvider({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com',
+        enableRealtime: true,
+        fetchImplementation: mockFetch,
+      });
+
+      provider.events.addHandler(ClientProviderEvents.ConfigurationChanged, configChangedHandler);
+
+      await provider.initialize({ targetingKey: 'user-1' });
+      await new Promise(r => setTimeout(r, 50));
+
+      // Send an SSE event
+      const encoder = new TextEncoder();
+      const event = 'event: flag-updated\ndata: {"flagKey":"my-flag","timestamp":"2025-01-01T00:00:00Z"}\n\n';
+      await streamController!.write(encoder.encode(event));
+      await new Promise(r => setTimeout(r, 100));
+
+      // ConfigurationChanged should be emitted even if OFREP onContextChange fails internally
+      expect(configChangedHandler).toHaveBeenCalled();
+
+      await provider.onClose();
+      vi.unstubAllGlobals();
+    });
+  });
 });
