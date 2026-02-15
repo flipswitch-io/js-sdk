@@ -2,6 +2,7 @@ import {
   ClientProviderStatus,
   ClientProviderEvents,
   type EvaluationContext,
+  type EventContext,
   type JsonValue,
   type ProviderMetadata,
   type ResolutionDetails,
@@ -482,14 +483,18 @@ export class FlipswitchProvider {
     }
 
     // Emit configuration changed event - OpenFeature clients will re-evaluate flags
-    this.emit(ClientProviderEvents.ConfigurationChanged);
+    if (event.flagKey) {
+      this.emit(ClientProviderEvents.ConfigurationChanged, { flagsChanged: [event.flagKey] });
+    } else {
+      this.emit(ClientProviderEvents.ConfigurationChanged);
+    }
   }
 
   /**
    * Emit an event through the OpenFeature event emitter.
    */
-  private emit(event: ProviderEmittableEvents): void {
-    this.events.emit(event);
+  private emit(event: ProviderEmittableEvents, context?: EventContext): void {
+    this.events.emit(event, context);
   }
 
   // ===============================
