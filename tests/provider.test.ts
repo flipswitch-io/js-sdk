@@ -134,9 +134,8 @@ describe('FlipswitchProvider', () => {
         enablePollingFallback: true,
         maxSseRetries: 3,
         fetchImplementation: vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }),
-      }, {
-        onConnectionStatusChange: (status) => statusChanges.push(status),
       });
+      provider.on('connectionStatusChange', (status) => statusChanges.push(status));
 
       // Initially polling should not be active
       expect(provider.isPollingActive()).toBe(false);
@@ -1161,9 +1160,8 @@ describe('FlipswitchProvider', () => {
         baseUrl: 'https://api.example.com',
         enableRealtime: true,
         fetchImplementation: mockFetch,
-      }, {
-        onConnectionStatusChange: (status) => statusChanges.push(status),
       });
+      provider.on('connectionStatusChange', (status) => statusChanges.push(status));
 
       await provider.initialize({ targetingKey: 'user-1' });
       // Give SSE time to connect
@@ -1202,9 +1200,8 @@ describe('FlipswitchProvider', () => {
         enablePollingFallback: true,
         maxSseRetries: 1, // Just 1 retry to trigger fallback quickly
         fetchImplementation: mockFetch,
-      }, {
-        onConnectionStatusChange: (status) => statusChanges.push(status),
       });
+      provider.on('connectionStatusChange', (status) => statusChanges.push(status));
 
       await provider.initialize({ targetingKey: 'user-1' });
       // Wait for SSE error + retry
@@ -1367,9 +1364,8 @@ describe('FlipswitchProvider', () => {
         baseUrl: 'https://api.example.com',
         enableRealtime: true,
         fetchImplementation: mockFetch,
-      }, {
-        onFlagChange,
       });
+      provider.on('flagChange', onFlagChange);
 
       provider.events.addHandler(ClientProviderEvents.ConfigurationChanged, configChangedHandler);
 
@@ -1420,9 +1416,8 @@ describe('FlipswitchProvider', () => {
         baseUrl: 'https://api.example.com',
         enableRealtime: true,
         fetchImplementation: mockFetch,
-      }, {
-        onFlagChange,
       });
+      provider.on('flagChange', onFlagChange);
 
       provider.events.addHandler(ClientProviderEvents.ConfigurationChanged, configChangedHandler);
 
@@ -1501,9 +1496,8 @@ describe('FlipswitchProvider', () => {
         enablePollingFallback: true,
         maxSseRetries: 1,
         fetchImplementation: mockFetch,
-      }, {
-        onConnectionStatusChange: (status) => statusChanges.push(status),
       });
+      provider.on('connectionStatusChange', (status) => statusChanges.push(status));
 
       await provider.initialize({ targetingKey: 'user-1' });
 
@@ -2205,6 +2199,206 @@ describe('FlipswitchProvider', () => {
 
       await provider.onClose();
       vi.unstubAllGlobals();
+    });
+  });
+
+  // ========================================
+  // Flag-Specific Listener Tests (on/off)
+  // ========================================
+
+  describe('Flag-Specific Listeners', () => {
+    beforeEach(() => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.spyOn(console, 'info').mockImplementation(() => {});
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function createTestProvider() {
+      return new FlipswitchProvider({
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com',
+        enableRealtime: false,
+        fetchImplementation: vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ flags: [] }) }),
+      });
+    }
+
+    it('flag-specific listener fires on matching key', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const events: FlagChangeEvent[] = [];
+      provider.on('flagChange', 'dark-mode', (e) => events.push(e));
+
+      // Access handleFlagChange via the internal mechanism - simulate via on('flagChange') global
+      // We need to trigger handleFlagChange; use a global listener to verify dispatch
+      const globalEvents: FlagChangeEvent[] = [];
+      provider.on('flagChange', (e) => globalEvents.push(e));
+
+      // Trigger via direct call to the private method using any cast
+      await (provider as any).handleFlagChange({ flagKey: 'dark-mode', timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(events).toHaveLength(1);
+      expect(events[0].flagKey).toBe('dark-mode');
+      expect(globalEvents).toHaveLength(1);
+
+      await provider.onClose();
+    });
+
+    it('flag-specific listener does NOT fire on non-matching key', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const events: FlagChangeEvent[] = [];
+      provider.on('flagChange', 'dark-mode', (e) => events.push(e));
+
+      await (provider as any).handleFlagChange({ flagKey: 'other-flag', timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(events).toHaveLength(0);
+
+      await provider.onClose();
+    });
+
+    it('flag-specific listener fires on bulk invalidation (null flagKey)', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const events: FlagChangeEvent[] = [];
+      provider.on('flagChange', 'dark-mode', (e) => events.push(e));
+
+      await (provider as any).handleFlagChange({ flagKey: null, timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(events).toHaveLength(1);
+      expect(events[0].flagKey).toBeNull();
+
+      await provider.onClose();
+    });
+
+    it('unsubscribe function removes listener', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const events: FlagChangeEvent[] = [];
+      const unsub = provider.on('flagChange', 'dark-mode', (e) => events.push(e));
+
+      await (provider as any).handleFlagChange({ flagKey: 'dark-mode', timestamp: '2025-01-01T00:00:00Z' });
+      expect(events).toHaveLength(1);
+
+      unsub();
+
+      await (provider as any).handleFlagChange({ flagKey: 'dark-mode', timestamp: '2025-01-01T00:00:00Z' });
+      expect(events).toHaveLength(1); // still 1 - unsubscribed
+
+      await provider.onClose();
+    });
+
+    it('multiple listeners for same key all fire', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const events1: FlagChangeEvent[] = [];
+      const events2: FlagChangeEvent[] = [];
+
+      provider.on('flagChange', 'dark-mode', (e) => events1.push(e));
+      provider.on('flagChange', 'dark-mode', (e) => events2.push(e));
+
+      await (provider as any).handleFlagChange({ flagKey: 'dark-mode', timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(events1).toHaveLength(1);
+      expect(events2).toHaveLength(1);
+
+      await provider.onClose();
+    });
+
+    it('listener exception does not prevent other listeners from firing', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const events: FlagChangeEvent[] = [];
+
+      provider.on('flagChange', 'dark-mode', () => { throw new Error('boom'); });
+      provider.on('flagChange', 'dark-mode', (e) => events.push(e));
+
+      await (provider as any).handleFlagChange({ flagKey: 'dark-mode', timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(events).toHaveLength(1);
+
+      await provider.onClose();
+    });
+
+    it('off() removes a flag-specific listener', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const events: FlagChangeEvent[] = [];
+      const handler = (e: FlagChangeEvent) => events.push(e);
+
+      provider.on('flagChange', 'dark-mode', handler);
+      provider.off('flagChange', 'dark-mode', handler);
+
+      await (provider as any).handleFlagChange({ flagKey: 'dark-mode', timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(events).toHaveLength(0);
+
+      await provider.onClose();
+    });
+
+    it('off() removes a global listener', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const events: FlagChangeEvent[] = [];
+      const handler = (e: FlagChangeEvent) => events.push(e);
+
+      provider.on('flagChange', handler);
+      provider.off('flagChange', handler);
+
+      await (provider as any).handleFlagChange({ flagKey: 'test', timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(events).toHaveLength(0);
+
+      await provider.onClose();
+    });
+
+    it('global listener still works alongside flag-specific listeners', async () => {
+      const provider = createTestProvider();
+      await provider.initialize({ targetingKey: 'user-1' });
+
+      const globalEvents: FlagChangeEvent[] = [];
+      const specificEvents: FlagChangeEvent[] = [];
+
+      provider.on('flagChange', (e) => globalEvents.push(e));
+      provider.on('flagChange', 'dark-mode', (e) => specificEvents.push(e));
+
+      await (provider as any).handleFlagChange({ flagKey: 'dark-mode', timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(globalEvents).toHaveLength(1);
+      expect(specificEvents).toHaveLength(1);
+
+      await (provider as any).handleFlagChange({ flagKey: 'other-flag', timestamp: '2025-01-01T00:00:00Z' });
+
+      expect(globalEvents).toHaveLength(2);
+      expect(specificEvents).toHaveLength(1); // not called for 'other-flag'
+
+      await provider.onClose();
+    });
+
+    it('connectionStatusChange on/off works', () => {
+      const provider = createTestProvider();
+
+      const statuses: SseConnectionStatus[] = [];
+      const handler = (s: SseConnectionStatus) => statuses.push(s);
+
+      const unsub = provider.on('connectionStatusChange', handler);
+      unsub();
+
+      // No way to trigger status change without SSE, but verify no errors
+      provider.off('connectionStatusChange', handler);
+
+      provider.onClose();
     });
   });
 });

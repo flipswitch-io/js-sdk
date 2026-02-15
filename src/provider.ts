@@ -11,7 +11,7 @@ import { OpenFeatureEventEmitter, type ProviderEmittableEvents } from '@openfeat
 import { OFREPWebProvider } from '@openfeature/ofrep-web-provider';
 import { SseClient } from './sse-client';
 import { BrowserCache } from './browser-cache';
-import type { FlipswitchOptions, FlagChangeEvent, SseConnectionStatus, FlipswitchEventHandlers, FlagEvaluation } from './types';
+import type { FlipswitchOptions, FlagChangeEvent, SseConnectionStatus, FlagChangeHandler, ConnectionStatusHandler, Unsubscribe, FlagEvaluation } from './types';
 import { version as SDK_VERSION } from '../package.json';
 
 const DEFAULT_BASE_URL = 'https://api.flipswitch.io';
@@ -62,7 +62,6 @@ export class FlipswitchProvider {
   private sseClient: SseClient | null = null;
   private _status: ClientProviderStatus = ClientProviderStatus.NOT_READY;
   private _currentContext: EvaluationContext = {};
-  private userEventHandlers: FlipswitchEventHandlers = {};
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
   private sseRetryCount = 0;
   private isPollingFallbackActive = false;
@@ -70,12 +69,16 @@ export class FlipswitchProvider {
   private offlineHandler: (() => void) | null = null;
   private _isOnline = true;
 
-  constructor(options: FlipswitchOptions, eventHandlers?: FlipswitchEventHandlers) {
+  // Event listener storage
+  private globalFlagChangeListeners = new Set<FlagChangeHandler>();
+  private keyFlagChangeListeners = new Map<string, Set<FlagChangeHandler>>();
+  private connectionStatusListeners = new Set<ConnectionStatusHandler>();
+
+  constructor(options: FlipswitchOptions) {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     this.apiKey = options.apiKey;
     this.enableRealtime = options.enableRealtime ?? true;
     this.fetchImpl = options.fetchImplementation ?? (typeof window !== 'undefined' ? fetch.bind(window) : fetch);
-    this.userEventHandlers = eventHandlers ?? {};
 
     // Browser-specific features default to enabled in browser, disabled in Node.js
     const isBrowser = typeof window !== 'undefined';
@@ -409,7 +412,13 @@ export class FlipswitchProvider {
         this.handleFlagChange(event);
       },
       (status: SseConnectionStatus) => {
-        this.userEventHandlers.onConnectionStatusChange?.(status);
+        for (const listener of this.connectionStatusListeners) {
+          try {
+            listener(status);
+          } catch (e) {
+            console.error('[Flipswitch] Error in connection status listener:', e);
+          }
+        }
 
         if (status === 'error') {
           this.sseRetryCount++;
@@ -461,7 +470,40 @@ export class FlipswitchProvider {
    * Triggers OFREP cache refresh, updates browser cache, and emits PROVIDER_CONFIGURATION_CHANGED.
    */
   private async handleFlagChange(event: FlagChangeEvent): Promise<void> {
-    this.userEventHandlers.onFlagChange?.(event);
+    // Notify global flag change listeners
+    for (const listener of this.globalFlagChangeListeners) {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('[Flipswitch] Error in flag change listener:', e);
+      }
+    }
+
+    // Notify key-specific listeners
+    if (event.flagKey) {
+      // Targeted change — fire only matching key listeners
+      const listeners = this.keyFlagChangeListeners.get(event.flagKey);
+      if (listeners) {
+        for (const listener of listeners) {
+          try {
+            listener(event);
+          } catch (e) {
+            console.error('[Flipswitch] Error in flag change listener:', e);
+          }
+        }
+      }
+    } else {
+      // Bulk invalidation — fire ALL key-specific listeners
+      for (const listeners of this.keyFlagChangeListeners.values()) {
+        for (const listener of listeners) {
+          try {
+            listener(event);
+          } catch (e) {
+            console.error('[Flipswitch] Error in flag change listener:', e);
+          }
+        }
+      }
+    }
 
     // Invalidate browser cache for the changed flag(s)
     if (this.browserCache) {
@@ -531,6 +573,105 @@ export class FlipswitchProvider {
     context: EvaluationContext
   ): ResolutionDetails<T> {
     return this.ofrepProvider.resolveObjectEvaluation(flagKey, defaultValue, context);
+  }
+
+  // ===============================
+  // Event Listener Methods
+  // ===============================
+
+  /**
+   * Subscribe to events.
+   *
+   * @example
+   * ```typescript
+   * // All flag changes
+   * const unsub = provider.on('flagChange', (e) => console.log(e.flagKey));
+   *
+   * // Specific flag
+   * const unsub2 = provider.on('flagChange', 'dark-mode', (e) => {
+   *   console.log('dark-mode changed at', e.timestamp);
+   * });
+   *
+   * // Connection status
+   * provider.on('connectionStatusChange', (status) => console.log(status));
+   *
+   * unsub(); // cleanup
+   * ```
+   */
+  on(event: 'flagChange', handler: FlagChangeHandler): Unsubscribe;
+  on(event: 'flagChange', flagKey: string, handler: FlagChangeHandler): Unsubscribe;
+  on(event: 'connectionStatusChange', handler: ConnectionStatusHandler): Unsubscribe;
+  on(
+    event: 'flagChange' | 'connectionStatusChange',
+    handlerOrFlagKey: FlagChangeHandler | ConnectionStatusHandler | string,
+    maybeHandler?: FlagChangeHandler
+  ): Unsubscribe {
+    if (event === 'connectionStatusChange') {
+      const handler = handlerOrFlagKey as ConnectionStatusHandler;
+      this.connectionStatusListeners.add(handler);
+      return () => {
+        this.connectionStatusListeners.delete(handler);
+      };
+    }
+
+    // event === 'flagChange'
+    if (typeof handlerOrFlagKey === 'string') {
+      // Flag-specific listener
+      const flagKey = handlerOrFlagKey;
+      const handler = maybeHandler!;
+      let listeners = this.keyFlagChangeListeners.get(flagKey);
+      if (!listeners) {
+        listeners = new Set();
+        this.keyFlagChangeListeners.set(flagKey, listeners);
+      }
+      listeners.add(handler);
+      return () => {
+        listeners!.delete(handler);
+        if (listeners!.size === 0) {
+          this.keyFlagChangeListeners.delete(flagKey);
+        }
+      };
+    }
+
+    // Global flag change listener
+    const handler = handlerOrFlagKey as FlagChangeHandler;
+    this.globalFlagChangeListeners.add(handler);
+    return () => {
+      this.globalFlagChangeListeners.delete(handler);
+    };
+  }
+
+  /**
+   * Unsubscribe from events.
+   */
+  off(event: 'flagChange', handler: FlagChangeHandler): void;
+  off(event: 'flagChange', flagKey: string, handler: FlagChangeHandler): void;
+  off(event: 'connectionStatusChange', handler: ConnectionStatusHandler): void;
+  off(
+    event: 'flagChange' | 'connectionStatusChange',
+    handlerOrFlagKey: FlagChangeHandler | ConnectionStatusHandler | string,
+    maybeHandler?: FlagChangeHandler
+  ): void {
+    if (event === 'connectionStatusChange') {
+      this.connectionStatusListeners.delete(handlerOrFlagKey as ConnectionStatusHandler);
+      return;
+    }
+
+    // event === 'flagChange'
+    if (typeof handlerOrFlagKey === 'string') {
+      const flagKey = handlerOrFlagKey;
+      const handler = maybeHandler!;
+      const listeners = this.keyFlagChangeListeners.get(flagKey);
+      if (listeners) {
+        listeners.delete(handler);
+        if (listeners.size === 0) {
+          this.keyFlagChangeListeners.delete(flagKey);
+        }
+      }
+      return;
+    }
+
+    this.globalFlagChangeListeners.delete(handlerOrFlagKey as FlagChangeHandler);
   }
 
   /**

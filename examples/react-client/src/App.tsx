@@ -68,17 +68,13 @@ function App() {
     setIsConnecting(true);
     setError(null);
 
-    const provider = new FlipswitchProvider(
-      { apiKey: apiKey.trim() },
-      {
-        onFlagChange: (event: { flagKey: string | null }) => {
-          handleFlagChange(event.flagKey);
-        },
-        onConnectionStatusChange: (status: SseConnectionStatus) => {
-          setSseStatus(status);
-        },
-      }
-    );
+    const provider = new FlipswitchProvider({ apiKey: apiKey.trim() });
+    provider.on('flagChange', (event: { flagKey: string | null }) => {
+      handleFlagChange(event.flagKey);
+    });
+    provider.on('connectionStatusChange', (status: SseConnectionStatus) => {
+      setSseStatus(status);
+    });
 
     try {
       await provider.initialize();

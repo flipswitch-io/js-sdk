@@ -63,34 +63,34 @@ async function main() {
   }
 
   // Create provider - only API key is required
-  provider = new FlipswitchProvider(
-    { apiKey, baseUrl },
-    {
-      onFlagChange: async (event) => {
-        const flagKey = event.flagKey;
-        console.log(`\n*** Flag changed: ${flagKey ?? 'all flags'} ***`);
+  provider = new FlipswitchProvider({ apiKey, baseUrl });
 
-        if (flagKey) {
-          // Re-evaluate the specific flag that changed
-          const flag = await provider.evaluateFlag(flagKey, context);
-          if (flag) {
-            printFlag(flag);
-          }
-        } else {
-          // Bulk invalidation - re-evaluate all flags
-          await printAllFlags();
-        }
-        console.log();
-      },
-      onConnectionStatusChange: (status) => {
-        if (status === 'error') {
-          console.log('\n[SSE] Connection error - will reconnect...');
-        } else if (status === 'connected') {
-          console.log('[SSE] Connected');
-        }
-      },
+  // Subscribe to flag changes
+  provider.on('flagChange', async (event) => {
+    const flagKey = event.flagKey;
+    console.log(`\n*** Flag changed: ${flagKey ?? 'all flags'} ***`);
+
+    if (flagKey) {
+      // Re-evaluate the specific flag that changed
+      const flag = await provider.evaluateFlag(flagKey, context);
+      if (flag) {
+        printFlag(flag);
+      }
+    } else {
+      // Bulk invalidation - re-evaluate all flags
+      await printAllFlags();
     }
-  );
+    console.log();
+  });
+
+  // Subscribe to connection status changes
+  provider.on('connectionStatusChange', (status) => {
+    if (status === 'error') {
+      console.log('\n[SSE] Connection error - will reconnect...');
+    } else if (status === 'connected') {
+      console.log('[SSE] Connected');
+    }
+  });
 
   // Initialize the provider
   try {
