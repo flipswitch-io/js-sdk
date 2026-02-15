@@ -1386,7 +1386,9 @@ describe('FlipswitchProvider', () => {
         flagKey: 'my-flag',
         timestamp: '2025-01-01T00:00:00Z',
       });
-      expect(configChangedHandler).toHaveBeenCalled();
+      expect(configChangedHandler).toHaveBeenCalledWith(
+        expect.objectContaining({ flagsChanged: ['my-flag'] }),
+      );
 
       await provider.onClose();
       vi.unstubAllGlobals();
@@ -1394,6 +1396,7 @@ describe('FlipswitchProvider', () => {
 
     it('handleFlagChange with null flagKey invalidates all cache', async () => {
       const onFlagChange = vi.fn();
+      const configChangedHandler = vi.fn();
       let streamController: WritableStreamDefaultWriter<Uint8Array>;
 
       // SSE client uses global fetch
@@ -1421,6 +1424,8 @@ describe('FlipswitchProvider', () => {
         onFlagChange,
       });
 
+      provider.events.addHandler(ClientProviderEvents.ConfigurationChanged, configChangedHandler);
+
       await provider.initialize({ targetingKey: 'user-1' });
       await new Promise((r) => setTimeout(r, 50));
 
@@ -1434,6 +1439,10 @@ describe('FlipswitchProvider', () => {
         flagKey: null,
         timestamp: '2025-01-01T00:00:00Z',
       });
+      // Config-updated should NOT include flagsChanged
+      expect(configChangedHandler).toHaveBeenCalledWith(
+        expect.not.objectContaining({ flagsChanged: expect.anything() }),
+      );
 
       await provider.onClose();
       vi.unstubAllGlobals();
