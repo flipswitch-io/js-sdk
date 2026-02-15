@@ -145,19 +145,19 @@ export interface FlagChangeEvent {
 export type SseConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
 /**
- * Event handler types for the provider.
+ * Handler for flag change events.
  */
-export interface FlipswitchEventHandlers {
-  /**
-   * Called when a flag changes.
-   */
-  onFlagChange?: (event: FlagChangeEvent) => void;
+export type FlagChangeHandler = (event: FlagChangeEvent) => void;
 
-  /**
-   * Called when the SSE connection status changes.
-   */
-  onConnectionStatusChange?: (status: SseConnectionStatus) => void;
-}
+/**
+ * Handler for connection status changes.
+ */
+export type ConnectionStatusHandler = (status: SseConnectionStatus) => void;
+
+/**
+ * Function that unsubscribes a listener when called.
+ */
+export type Unsubscribe = () => void;
 
 /**
  * Represents the result of evaluating a single flag.

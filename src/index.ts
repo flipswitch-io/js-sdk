@@ -38,6 +38,8 @@ export type {
   ApiKeyRotatedEvent,
   FlagEvent,
   SseConnectionStatus,
-  FlipswitchEventHandlers,
+  FlagChangeHandler,
+  ConnectionStatusHandler,
+  Unsubscribe,
   FlagEvaluation,
 } from './types';
