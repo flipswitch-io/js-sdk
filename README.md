@@ -122,28 +122,29 @@ const showFeature = await client.getBooleanValue('new-feature', false, context);
 
 ### Real-Time Updates (SSE)
 
-The SDK automatically listens for flag changes via SSE:
+Listen for flag changes:
 
 ```typescript
-const provider = new FlipswitchProvider(
-  { apiKey: 'your-api-key' },
-  {
-    onFlagChange: (event) => {
-      console.log(`Flag changed: ${event.flagKey ?? 'all flags'}`);
-      // event.flagKey is null for bulk invalidation
-    },
-    onConnectionStatusChange: (status) => {
-      console.log(`SSE status: ${status}`);
-      // 'connecting' | 'connected' | 'disconnected' | 'error'
-    },
-  }
-);
+const provider = new FlipswitchProvider({ apiKey: 'your-api-key' });
 
-// Check current status
-const status = provider.getSseStatus();
+// Listen for all flag changes (flagKey is null for bulk invalidation)
+provider.on('flagChange', (event) => {
+  console.log(`Flag changed: ${event.flagKey ?? 'all flags'}`);
+});
 
-// Force reconnect
-provider.reconnectSse();
+// Listen for a specific flag (also fires on bulk invalidation)
+const unsub = provider.on('flagChange', 'dark-mode', (event) => {
+  console.log('dark-mode changed, re-evaluating...');
+});
+unsub(); // stop listening
+
+// Monitor SSE connection status
+provider.on('connectionStatusChange', (status) => {
+  console.log(`SSE status: ${status}`);
+});
+
+provider.getSseStatus();  // current status
+provider.reconnectSse();  // force reconnect
 ```
 
 ### Bulk Flag Evaluation
