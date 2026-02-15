@@ -35,6 +35,10 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/flipswitch-io/js-sdk.git"
+  },
   "dependencies": {
     "@openfeature/ofrep-core": "^2.0.0",
     "@openfeature/ofrep-web-provider": "^0.3.5"
