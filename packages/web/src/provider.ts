@@ -9,9 +9,20 @@ import {
 } from '@openfeature/core';
 import { OpenFeatureEventEmitter, type ProviderEmittableEvents } from '@openfeature/web-sdk';
 import { OFREPWebProvider } from '@openfeature/ofrep-web-provider';
-import { SseClient } from './sse-client';
+import {
+  SseClient,
+  FlipswitchHttpClient,
+  buildTelemetryHeaders,
+  formatValue,
+  type FlagChangeEvent,
+  type FlagEvaluation,
+  type SseConnectionStatus,
+  type FlagChangeHandler,
+  type ConnectionStatusHandler,
+  type Unsubscribe,
+} from '@flipswitch-io/core';
 import { BrowserCache } from './browser-cache';
-import type { FlipswitchOptions, FlagChangeEvent, SseConnectionStatus, FlagChangeHandler, ConnectionStatusHandler, Unsubscribe, FlagEvaluation } from './types';
+import type { FlipswitchWebOptions } from './types';
 import { version as SDK_VERSION } from '../package.json';
 
 const DEFAULT_BASE_URL = 'https://api.flipswitch.io';
@@ -19,18 +30,18 @@ const DEFAULT_POLLING_INTERVAL = 30000; // 30 seconds
 const DEFAULT_MAX_SSE_RETRIES = 5;
 
 /**
- * Flipswitch OpenFeature provider with real-time SSE support.
+ * Flipswitch OpenFeature web provider with real-time SSE support.
  *
- * This provider wraps the OFREP provider for flag evaluation and adds
- * real-time updates via Server-Sent Events (SSE).
+ * This provider wraps the OFREP web provider for flag evaluation and adds
+ * real-time updates via Server-Sent Events (SSE), browser caching,
+ * offline support, and visibility handling.
  *
  * @example
  * ```typescript
- * import { FlipswitchProvider } from '@flipswitch-io/sdk';
+ * import { FlipswitchWebProvider } from '@flipswitch-io/web-provider';
  * import { OpenFeature } from '@openfeature/web-sdk';
  *
- * // Only API key is required - defaults to https://api.flipswitch.io
- * const provider = new FlipswitchProvider({
+ * const provider = new FlipswitchWebProvider({
  *   apiKey: 'your-api-key'
  * });
  *
@@ -39,9 +50,9 @@ const DEFAULT_MAX_SSE_RETRIES = 5;
  * const darkMode = await client.getBooleanValue('dark-mode', false);
  * ```
  */
-export class FlipswitchProvider {
+export class FlipswitchWebProvider {
   readonly metadata: ProviderMetadata = {
-    name: 'flipswitch',
+    name: 'flipswitch-web',
   };
 
   readonly rulesFromFlagValue = false;
@@ -58,6 +69,8 @@ export class FlipswitchProvider {
   private readonly pollingInterval: number;
   private readonly maxSseRetries: number;
   private readonly offlineMode: boolean;
+  private readonly httpClient: FlipswitchHttpClient;
+  private readonly telemetryHeaders: Record<string, string>;
 
   private sseClient: SseClient | null = null;
   private _status: ClientProviderStatus = ClientProviderStatus.NOT_READY;
@@ -67,6 +80,7 @@ export class FlipswitchProvider {
   private isPollingFallbackActive = false;
   private onlineHandler: (() => void) | null = null;
   private offlineHandler: (() => void) | null = null;
+  private visibilityHandler: (() => void) | null = null;
   private _isOnline = true;
 
   // Event listener storage
@@ -74,7 +88,7 @@ export class FlipswitchProvider {
   private keyFlagChangeListeners = new Map<string, Set<FlagChangeHandler>>();
   private connectionStatusListeners = new Set<ConnectionStatusHandler>();
 
-  constructor(options: FlipswitchOptions) {
+  constructor(options: FlipswitchWebOptions) {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     this.apiKey = options.apiKey;
     this.enableRealtime = options.enableRealtime ?? true;
@@ -97,94 +111,31 @@ export class FlipswitchProvider {
       this._isOnline = navigator.onLine;
     }
 
-    // Build headers array
+    // Build telemetry headers
+    this.telemetryHeaders = buildTelemetryHeaders(SDK_VERSION, this.enableRealtime);
+
+    // Build headers array for OFREP provider
     const headers: [string, string][] = [
       ['X-API-Key', this.apiKey],
-      ['X-Flipswitch-SDK', this.getTelemetrySdkHeader()],
-      ['X-Flipswitch-Runtime', this.getTelemetryRuntimeHeader()],
-      ['X-Flipswitch-OS', this.getTelemetryOsHeader()],
-      ['X-Flipswitch-Features', this.getTelemetryFeaturesHeader()],
+      ...Object.entries(this.telemetryHeaders) as [string, string][],
     ];
 
     // Create underlying OFREP provider for flag evaluation
-    // Note: OFREPWebProvider automatically appends /ofrep/v1 to the baseUrl
     // Disable OFREP polling - we use SSE for real-time updates instead
     this.ofrepProvider = new OFREPWebProvider({
       baseUrl: this.baseUrl,
       fetchImplementation: this.fetchImpl,
       headers,
-      pollInterval: 0, // Disable polling - SSE handles real-time updates
+      pollInterval: 0,
     });
-  }
 
-  private getTelemetrySdkHeader(): string {
-    return `javascript/${SDK_VERSION}`;
-  }
-
-  private getTelemetryRuntimeHeader(): string {
-    // Detect runtime environment
-    if (typeof process !== 'undefined' && process.versions?.node) {
-      return `node/${process.versions.node}`;
-    }
-    if (typeof navigator !== 'undefined') {
-      // Browser - extract browser info from userAgent
-      const ua = navigator.userAgent;
-      if (ua.includes('Chrome')) {
-        const match = ua.match(/Chrome\/(\d+)/);
-        return `chrome/${match?.[1] ?? 'unknown'}`;
-      }
-      if (ua.includes('Firefox')) {
-        const match = ua.match(/Firefox\/(\d+)/);
-        return `firefox/${match?.[1] ?? 'unknown'}`;
-      }
-      if (ua.includes('Safari') && !ua.includes('Chrome')) {
-        const match = ua.match(/Version\/(\d+)/);
-        return `safari/${match?.[1] ?? 'unknown'}`;
-      }
-      return 'browser/unknown';
-    }
-    return 'unknown/unknown';
-  }
-
-  private getTelemetryOsHeader(): string {
-    // Detect OS
-    if (typeof process !== 'undefined' && process.platform) {
-      const platform = process.platform;
-      const arch = process.arch;
-      const os = platform === 'darwin' ? 'darwin' : platform === 'win32' ? 'windows' : platform;
-      return `${os}/${arch}`;
-    }
-    if (typeof navigator !== 'undefined') {
-      const ua = navigator.userAgent.toLowerCase();
-      let os = 'unknown';
-      let arch = 'unknown';
-
-      if (ua.includes('mac')) os = 'darwin';
-      else if (ua.includes('win')) os = 'windows';
-      else if (ua.includes('linux')) os = 'linux';
-      else if (ua.includes('android')) os = 'android';
-      else if (ua.includes('iphone') || ua.includes('ipad')) os = 'ios';
-
-      // Try to detect architecture
-      if (ua.includes('arm64') || ua.includes('aarch64')) arch = 'arm64';
-      else if (ua.includes('x64') || ua.includes('x86_64') || ua.includes('amd64')) arch = 'amd64';
-
-      return `${os}/${arch}`;
-    }
-    return 'unknown/unknown';
-  }
-
-  private getTelemetryFeaturesHeader(): string {
-    return `sse=${this.enableRealtime}`;
-  }
-
-  private getTelemetryHeaders(): Record<string, string> {
-    return {
-      'X-Flipswitch-SDK': this.getTelemetrySdkHeader(),
-      'X-Flipswitch-Runtime': this.getTelemetryRuntimeHeader(),
-      'X-Flipswitch-OS': this.getTelemetryOsHeader(),
-      'X-Flipswitch-Features': this.getTelemetryFeaturesHeader(),
-    };
+    // Create HTTP client for direct flag evaluation
+    this.httpClient = new FlipswitchHttpClient(
+      this.baseUrl,
+      this.apiKey,
+      this.fetchImpl,
+      this.telemetryHeaders,
+    );
   }
 
   get status(): ClientProviderStatus {
@@ -213,7 +164,7 @@ export class FlipswitchProvider {
     // Initialize the underlying OFREP provider
     try {
       await this.ofrepProvider.initialize(context);
-    } catch (error) {
+    } catch (_error) {
       // OFREP provider may fail on init, try a bulk evaluation to validate API key
       try {
         const response = await this.fetchImpl(`${this.baseUrl}/ofrep/v1/evaluate/flags`, {
@@ -221,7 +172,7 @@ export class FlipswitchProvider {
           headers: {
             'Content-Type': 'application/json',
             'X-API-Key': this.apiKey,
-            ...this.getTelemetryHeaders(),
+            ...this.telemetryHeaders,
           },
           body: JSON.stringify({
             context: { targetingKey: '_init_' },
@@ -254,7 +205,6 @@ export class FlipswitchProvider {
 
   /**
    * Called by OpenFeature when the global evaluation context changes.
-   * This happens when the user logs in/out and the targeting key changes.
    */
   async onContextChange(oldContext: EvaluationContext, newContext: EvaluationContext): Promise<void> {
     this._currentContext = newContext;
@@ -278,12 +228,10 @@ export class FlipswitchProvider {
       this._isOnline = true;
       console.info('[Flipswitch] Connection restored - refreshing flags');
 
-      // Reconnect SSE if it was disconnected
       if (this.enableRealtime && this.sseClient) {
         this.sseClient.resume();
       }
 
-      // Refresh flags
       this.refreshFlags();
     };
 
@@ -291,15 +239,12 @@ export class FlipswitchProvider {
       this._isOnline = false;
       console.warn('[Flipswitch] Connection lost - serving cached values');
 
-      // Pause SSE to avoid connection errors
       if (this.sseClient) {
         this.sseClient.pause();
       }
 
-      // Stop polling if active
       this.stopPolling();
 
-      // Mark as stale but keep serving cached values
       if (this._status !== ClientProviderStatus.STALE) {
         this._status = ClientProviderStatus.STALE;
         this.emit(ClientProviderEvents.Stale);
@@ -308,6 +253,24 @@ export class FlipswitchProvider {
 
     window.addEventListener('online', this.onlineHandler);
     window.addEventListener('offline', this.offlineHandler);
+  }
+
+  /**
+   * Setup visibility API handling.
+   * Pauses SSE when tab is hidden, resumes when visible.
+   */
+  private setupVisibilityHandling(): void {
+    if (typeof document === 'undefined' || !this.enableVisibilityHandling || this.visibilityHandler) return;
+
+    this.visibilityHandler = () => {
+      if (document.hidden) {
+        this.sseClient?.pause();
+      } else {
+        this.sseClient?.resume();
+      }
+    };
+
+    document.addEventListener('visibilitychange', this.visibilityHandler);
   }
 
   /**
@@ -338,6 +301,12 @@ export class FlipswitchProvider {
 
     // Cleanup polling
     this.stopPolling();
+
+    // Cleanup visibility handler
+    if (this.visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
 
     // Cleanup online/offline handlers
     if (typeof window !== 'undefined') {
@@ -404,7 +373,6 @@ export class FlipswitchProvider {
    * Start the SSE connection for real-time updates.
    */
   private startSseConnection(): void {
-    const telemetryHeaders = this.getTelemetryHeadersMap();
     this.sseClient = new SseClient(
       this.baseUrl,
       this.apiKey,
@@ -423,7 +391,6 @@ export class FlipswitchProvider {
         if (status === 'error') {
           this.sseRetryCount++;
 
-          // Check if we should fall back to polling
           if (this.sseRetryCount >= this.maxSseRetries && this.enablePollingFallback) {
             console.warn(`[Flipswitch] SSE failed after ${this.sseRetryCount} retries - falling back to polling`);
             this.startPollingFallback();
@@ -432,7 +399,6 @@ export class FlipswitchProvider {
           this._status = ClientProviderStatus.STALE;
           this.emit(ClientProviderEvents.Stale);
         } else if (status === 'connected') {
-          // SSE connected - reset retry count and stop polling fallback
           this.sseRetryCount = 0;
 
           if (this.isPollingFallbackActive) {
@@ -446,28 +412,17 @@ export class FlipswitchProvider {
           }
         }
       },
-      telemetryHeaders,
-      this.enableVisibilityHandling
+      this.telemetryHeaders,
     );
+
+    // Setup visibility handling — pauses/resumes SSE when tab hidden/visible
+    this.setupVisibilityHandling();
 
     this.sseClient.connect();
   }
 
   /**
-   * Get telemetry headers as a map.
-   */
-  private getTelemetryHeadersMap(): Record<string, string> {
-    return {
-      'X-Flipswitch-SDK': this.getTelemetrySdkHeader(),
-      'X-Flipswitch-Runtime': this.getTelemetryRuntimeHeader(),
-      'X-Flipswitch-OS': this.getTelemetryOsHeader(),
-      'X-Flipswitch-Features': this.getTelemetryFeaturesHeader(),
-    };
-  }
-
-  /**
    * Handle a flag change event from SSE.
-   * Triggers OFREP cache refresh, updates browser cache, and emits PROVIDER_CONFIGURATION_CHANGED.
    */
   private async handleFlagChange(event: FlagChangeEvent): Promise<void> {
     // Notify global flag change listeners
@@ -481,7 +436,6 @@ export class FlipswitchProvider {
 
     // Notify key-specific listeners
     if (event.flagKey) {
-      // Targeted change — fire only matching key listeners
       const listeners = this.keyFlagChangeListeners.get(event.flagKey);
       if (listeners) {
         for (const listener of listeners) {
@@ -493,7 +447,6 @@ export class FlipswitchProvider {
         }
       }
     } else {
-      // Bulk invalidation — fire ALL key-specific listeners
       for (const listeners of this.keyFlagChangeListeners.values()) {
         for (const listener of listeners) {
           try {
@@ -510,21 +463,18 @@ export class FlipswitchProvider {
       if (event.flagKey) {
         this.browserCache.invalidate(event.flagKey);
       } else {
-        // Full invalidation
         this.browserCache.invalidate();
       }
     }
 
     // Trigger OFREP provider to refresh its cache
-    // The onContextChange method forces the provider to re-fetch flags
     try {
       await this.ofrepProvider.onContextChange?.(this._currentContext, this._currentContext);
     } catch (error) {
-      // Log but don't fail - the stale data is still usable
       console.warn('[Flipswitch] Failed to refresh flags after SSE event:', error);
     }
 
-    // Emit configuration changed event - OpenFeature clients will re-evaluate flags
+    // Emit configuration changed event
     if (event.flagKey) {
       this.emit(ClientProviderEvents.ConfigurationChanged, { flagsChanged: [event.flagKey] });
     } else {
@@ -579,25 +529,6 @@ export class FlipswitchProvider {
   // Event Listener Methods
   // ===============================
 
-  /**
-   * Subscribe to events.
-   *
-   * @example
-   * ```typescript
-   * // All flag changes
-   * const unsub = provider.on('flagChange', (e) => console.log(e.flagKey));
-   *
-   * // Specific flag
-   * const unsub2 = provider.on('flagChange', 'dark-mode', (e) => {
-   *   console.log('dark-mode changed at', e.timestamp);
-   * });
-   *
-   * // Connection status
-   * provider.on('connectionStatusChange', (status) => console.log(status));
-   *
-   * unsub(); // cleanup
-   * ```
-   */
   on(event: 'flagChange', handler: FlagChangeHandler): Unsubscribe;
   on(event: 'flagChange', flagKey: string, handler: FlagChangeHandler): Unsubscribe;
   on(event: 'connectionStatusChange', handler: ConnectionStatusHandler): Unsubscribe;
@@ -614,9 +545,7 @@ export class FlipswitchProvider {
       };
     }
 
-    // event === 'flagChange'
     if (typeof handlerOrFlagKey === 'string') {
-      // Flag-specific listener
       const flagKey = handlerOrFlagKey;
       const handler = maybeHandler!;
       let listeners = this.keyFlagChangeListeners.get(flagKey);
@@ -633,7 +562,6 @@ export class FlipswitchProvider {
       };
     }
 
-    // Global flag change listener
     const handler = handlerOrFlagKey as FlagChangeHandler;
     this.globalFlagChangeListeners.add(handler);
     return () => {
@@ -641,9 +569,6 @@ export class FlipswitchProvider {
     };
   }
 
-  /**
-   * Unsubscribe from events.
-   */
   off(event: 'flagChange', handler: FlagChangeHandler): void;
   off(event: 'flagChange', flagKey: string, handler: FlagChangeHandler): void;
   off(event: 'connectionStatusChange', handler: ConnectionStatusHandler): void;
@@ -657,7 +582,6 @@ export class FlipswitchProvider {
       return;
     }
 
-    // event === 'flagChange'
     if (typeof handlerOrFlagKey === 'string') {
       const flagKey = handlerOrFlagKey;
       const handler = maybeHandler!;
@@ -692,160 +616,27 @@ export class FlipswitchProvider {
   }
 
   // ===============================
-  // Bulk Flag Evaluation (Direct HTTP - OFREP providers don't expose bulk API)
+  // Direct Flag Evaluation (HTTP)
   // ===============================
 
   /**
-   * Transform OpenFeature context to OFREP context format.
+   * Evaluate all flags for the given context.
    */
-  private transformContext(context: EvaluationContext): Record<string, unknown> {
-    const result: Record<string, unknown> = {};
-
-    if (context.targetingKey) {
-      result.targetingKey = context.targetingKey;
-    }
-
-    // Copy all context properties
-    for (const [key, value] of Object.entries(context)) {
-      if (key !== 'targetingKey') {
-        result[key] = value;
-      }
-    }
-
-    return result;
+  async evaluateAllFlags(context: EvaluationContext): Promise<FlagEvaluation[]> {
+    return this.httpClient.evaluateAllFlags(context);
   }
 
   /**
-   * Infer the type of a value.
+   * Evaluate a single flag.
    */
-  private inferType(value: unknown): FlagEvaluation['valueType'] {
-    if (value === null) return 'null';
-    if (Array.isArray(value)) return 'array';
-    const t = typeof value;
-    if (t === 'boolean' || t === 'string' || t === 'number' || t === 'object') {
-      return t;
-    }
-    return 'unknown';
-  }
-
-  /**
-   * Get flag type from metadata or infer from value.
-   */
-  private getFlagType(flag: { value?: unknown; metadata?: { flagType?: string } }): FlagEvaluation['valueType'] {
-    // Prefer metadata.flagType if available (especially useful for disabled flags)
-    if (flag.metadata?.flagType) {
-      const metaType = flag.metadata.flagType;
-      if (metaType === 'boolean' || metaType === 'string' || metaType === 'integer' || metaType === 'decimal') {
-        return metaType === 'integer' || metaType === 'decimal' ? 'number' : metaType;
-      }
-    }
-    // Fall back to inferring from value
-    return this.inferType(flag.value);
+  async evaluateFlag(flagKey: string, context: EvaluationContext): Promise<FlagEvaluation | null> {
+    return this.httpClient.evaluateFlag(flagKey, context);
   }
 
   /**
    * Format a value for display.
    */
   formatValue(value: unknown): string {
-    if (value === null) return 'null';
-    if (typeof value === 'string') return `"${value}"`;
-    if (typeof value === 'object') return JSON.stringify(value);
-    return String(value);
-  }
-
-  /**
-   * Evaluate all flags for the given context.
-   * Returns a list of all flag evaluations with their keys, values, types, and reasons.
-   *
-   * Note: This method makes direct HTTP calls since OFREP providers don't expose
-   * the bulk evaluation API.
-   *
-   * @param context The evaluation context
-   * @returns List of flag evaluations
-   */
-  async evaluateAllFlags(context: EvaluationContext): Promise<FlagEvaluation[]> {
-    try {
-      const response = await this.fetchImpl(`${this.baseUrl}/ofrep/v1/evaluate/flags`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': this.apiKey,
-          ...this.getTelemetryHeaders(),
-        },
-        body: JSON.stringify({
-          context: this.transformContext(context),
-        }),
-      });
-
-      if (!response.ok) {
-        console.error(`Failed to evaluate all flags: ${response.status}`);
-        return [];
-      }
-
-      const result = await response.json();
-      const flags: FlagEvaluation[] = [];
-
-      if (result.flags && Array.isArray(result.flags)) {
-        for (const flag of result.flags) {
-          if (flag.key) {
-            flags.push({
-              key: flag.key,
-              value: flag.value,
-              valueType: this.getFlagType(flag),
-              reason: flag.reason ?? null,
-              variant: flag.variant ?? null,
-            });
-          }
-        }
-      }
-
-      return flags;
-    } catch (error) {
-      console.error('Error evaluating all flags:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Evaluate a single flag and return its evaluation result.
-   *
-   * Note: This method makes direct HTTP calls for demo purposes.
-   * For standard flag evaluation, use the OpenFeature client methods.
-   *
-   * @param flagKey The flag key to evaluate
-   * @param context The evaluation context
-   * @returns The flag evaluation, or null if the flag doesn't exist
-   */
-  async evaluateFlag(flagKey: string, context: EvaluationContext): Promise<FlagEvaluation | null> {
-    try {
-      const response = await this.fetchImpl(`${this.baseUrl}/ofrep/v1/evaluate/flags/${flagKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': this.apiKey,
-          ...this.getTelemetryHeaders(),
-        },
-        body: JSON.stringify({
-          context: this.transformContext(context),
-        }),
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const result = await response.json();
-
-      return {
-        key: result.key ?? flagKey,
-        value: result.value,
-        valueType: this.getFlagType(result),
-        reason: result.reason ?? null,
-        variant: result.variant ?? null,
-      };
-    } catch (error) {
-      console.error(`Error evaluating flag '${flagKey}':`, error);
-      return null;
-    }
+    return formatValue(value);
   }
 }

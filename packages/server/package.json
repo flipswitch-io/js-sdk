@@ -1,0 +1,56 @@
+{
+  "name": "@flipswitch-io/server-provider",
+  "version": "0.1.0",
+  "description": "Flipswitch OpenFeature server provider with real-time SSE support",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "feature-flags",
+    "openfeature",
+    "flipswitch",
+    "sse",
+    "real-time",
+    "server",
+    "node"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/flipswitch-io/js-sdk.git",
+    "directory": "packages/server"
+  },
+  "dependencies": {
+    "@flipswitch-io/core": "*",
+    "@openfeature/ofrep-provider": "^0.2.2",
+    "@openfeature/ofrep-core": "^2.0.0"
+  },
+  "peerDependencies": {
+    "@openfeature/core": "^1.6.0",
+    "@openfeature/server-sdk": "^1.0.0 || ^2.0.0"
+  },
+  "devDependencies": {
+    "@openfeature/core": "^1.6.0",
+    "@openfeature/server-sdk": "^1.17.0",
+    "@types/node": "^24.0.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.0"
+  }
+}

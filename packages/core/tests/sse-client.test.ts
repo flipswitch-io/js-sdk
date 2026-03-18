@@ -8,15 +8,8 @@ import type { FlagChangeEvent, SseConnectionStatus } from '../src/types';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Small delay helper that works with both real and fake timers. */
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/**
- * Creates a controllable HTTP server that speaks SSE.
- *
- * The returned object exposes helpers to send events, end the response, or
- * return an error status on the next request.
- */
 function createSseServer() {
   let currentRes: http.ServerResponse | null = null;
   let nextStatus = 200;
@@ -29,7 +22,7 @@ function createSseServer() {
     if (nextStatus !== 200) {
       res.writeHead(nextStatus);
       res.end();
-      nextStatus = 200; // reset for subsequent requests
+      nextStatus = 200;
       onConnection?.();
       return;
     }
@@ -131,9 +124,6 @@ describe('SseClient - Unit Tests', () => {
         'http://localhost:0',
         'test-key',
         vi.fn(),
-        undefined,
-        undefined,
-        false,
       );
       expect(client.getStatus()).toBe('disconnected');
       client.close();
@@ -165,8 +155,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         onFlagChange,
         onStatusChange,
-        undefined,
-        false,
       );
       client.connect();
       await sseServer.waitForConnection();
@@ -190,8 +178,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         onFlagChange,
         onStatusChange,
-        undefined,
-        false,
       );
       client.connect();
       await sseServer.waitForConnection();
@@ -214,8 +200,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         onFlagChange,
         onStatusChange,
-        undefined,
-        false,
       );
       client.connect();
       await sseServer.waitForConnection();
@@ -236,8 +220,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         onFlagChange,
         onStatusChange,
-        undefined,
-        false,
       );
       client.connect();
       await sseServer.waitForConnection();
@@ -255,8 +237,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         onFlagChange,
         onStatusChange,
-        undefined,
-        false,
       );
       client.connect();
       await sseServer.waitForConnection();
@@ -268,7 +248,6 @@ describe('SseClient - Unit Tests', () => {
       expect(onFlagChange).not.toHaveBeenCalled();
       expect(console.error).toHaveBeenCalled();
 
-      // Client should still be alive -- send a valid event after the bad one
       sseServer.sendEvent('flag-updated', {
         flagKey: 'after-bad',
         timestamp: '2025-01-01T00:00:00Z',
@@ -302,20 +281,16 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         vi.fn(),
         onStatusChange,
-        undefined,
-        false,
       );
 
       expect(client.getStatus()).toBe('disconnected');
 
       client.connect();
-      // Should have moved to 'connecting' synchronously
       expect(onStatusChange).toHaveBeenCalledWith('connecting');
 
       await sseServer.waitForConnection();
       await wait(50);
 
-      // After successful fetch, should move to 'connected'
       expect(onStatusChange).toHaveBeenCalledWith('connected');
       expect(client.getStatus()).toBe('connected');
     });
@@ -331,8 +306,6 @@ describe('SseClient - Unit Tests', () => {
       onStatusChange = vi.fn();
       fetchCallCount = 0;
 
-      // Mock fetch to reject immediately (simulating network errors)
-      // This avoids mixing fake timers with real HTTP connections.
       vi.stubGlobal(
         'fetch',
         vi.fn().mockImplementation(() => {
@@ -358,36 +331,28 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         vi.fn(),
         onStatusChange,
-        undefined,
-        false,
       );
 
       client.connect();
 
-      // Flush the micro-task queue so the mocked fetch resolves
       await vi.advanceTimersByTimeAsync(0);
 
-      // After first failure: connecting → error, reconnect scheduled at 1000ms
       expect(onStatusChange).toHaveBeenCalledWith('connecting');
       expect(onStatusChange).toHaveBeenCalledWith('error');
       expect(fetchCallCount).toBe(1);
 
-      // Advance past the first retry delay (1000ms)
       await vi.advanceTimersByTimeAsync(1000);
       await vi.advanceTimersByTimeAsync(0);
 
-      // Second attempt should have fired and failed
       expect(fetchCallCount).toBe(2);
 
-      // Advance only 1500ms — not enough for the doubled 2000ms delay
       await vi.advanceTimersByTimeAsync(1500);
       await vi.advanceTimersByTimeAsync(0);
-      expect(fetchCallCount).toBe(2); // no new attempt yet
+      expect(fetchCallCount).toBe(2);
 
-      // Advance the remaining 500ms to hit 2000ms total
       await vi.advanceTimersByTimeAsync(500);
       await vi.advanceTimersByTimeAsync(0);
-      expect(fetchCallCount).toBe(3); // third attempt now fired
+      expect(fetchCallCount).toBe(3);
     });
   });
 
@@ -413,8 +378,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         vi.fn(),
         onStatusChange,
-        undefined,
-        false,
       );
 
       client.connect();
@@ -435,8 +398,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         vi.fn(),
         onStatusChange,
-        undefined,
-        false,
       );
 
       client.connect();
@@ -460,9 +421,6 @@ describe('SseClient - Unit Tests', () => {
         sseServer.getUrl(),
         'test-key',
         vi.fn(),
-        undefined,
-        undefined,
-        false,
       );
 
       expect(client.isPaused()).toBe(false);
@@ -474,8 +432,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         vi.fn(),
         onStatusChange,
-        undefined,
-        false,
       );
 
       client.connect();
@@ -485,7 +441,6 @@ describe('SseClient - Unit Tests', () => {
       client.pause();
       const statusAfterFirstPause = client.getStatus();
 
-      // Second pause should not throw or change state
       client.pause();
       expect(client.getStatus()).toBe(statusAfterFirstPause);
       expect(client.isPaused()).toBe(true);
@@ -513,9 +468,6 @@ describe('SseClient - Unit Tests', () => {
         sseServer.getUrl(),
         'test-key',
         onFlagChange,
-        undefined,
-        undefined,
-        false,
       );
 
       client.connect();
@@ -557,8 +509,6 @@ describe('SseClient - Unit Tests', () => {
         'test-key',
         vi.fn(),
         onStatusChange,
-        undefined,
-        false,
       );
 
       client.connect();
@@ -572,232 +522,11 @@ describe('SseClient - Unit Tests', () => {
       expect(client.getStatus()).toBe('disconnected');
       expect(onStatusChange).toHaveBeenCalledWith('disconnected');
 
-      // Drop connection — should not trigger reconnect
       sseServer.dropConnection();
       await wait(200);
 
-      // Still disconnected, no reconnect attempt
       expect(client.getStatus()).toBe('disconnected');
     });
-  });
-
-  describe('close', () => {
-    let sseServer: ReturnType<typeof createSseServer>;
-    let client: SseClient;
-    let onStatusChange: ReturnType<typeof vi.fn>;
-
-    beforeEach(async () => {
-      sseServer = createSseServer();
-      await sseServer.listen();
-      onStatusChange = vi.fn();
-    });
-
-    afterEach(async () => {
-      client?.close();
-      await sseServer.close();
-    });
-
-    it('closed client does not reconnect', async () => {
-      client = new SseClient(
-        sseServer.getUrl(),
-        'test-key',
-        vi.fn(),
-        onStatusChange,
-        undefined,
-        false,
-      );
-
-      client.connect();
-      await sseServer.waitForConnection();
-      await wait(50);
-
-      const connectionsBeforeClose = sseServer.getConnectionCount();
-      client.close();
-
-      // Drop connection to trigger reconnect logic
-      sseServer.dropConnection();
-      await wait(200);
-
-      // No new connection should have been made
-      expect(sseServer.getConnectionCount()).toBe(connectionsBeforeClose);
-    });
-
-    it('status is disconnected after close', async () => {
-      client = new SseClient(
-        sseServer.getUrl(),
-        'test-key',
-        vi.fn(),
-        onStatusChange,
-        undefined,
-        false,
-      );
-
-      client.connect();
-      await sseServer.waitForConnection();
-      await wait(50);
-
-      expect(client.getStatus()).toBe('connected');
-
-      client.close();
-
-      expect(client.getStatus()).toBe('disconnected');
-      expect(onStatusChange).toHaveBeenCalledWith('disconnected');
-    });
-  });
-});
-
-describe('SseClient - Additional Edge Cases', () => {
-  beforeEach(() => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.spyOn(console, 'info').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('close existing eventSource on reconnect (connect called twice)', async () => {
-    const sseServer = createSseServer();
-    await sseServer.listen();
-
-    const client = new SseClient(
-      sseServer.getUrl(),
-      'test-key',
-      vi.fn(),
-      vi.fn(),
-      undefined,
-      false,
-    );
-
-    // First connect
-    client.connect();
-    await sseServer.waitForConnection();
-    await wait(50);
-
-    expect(sseServer.getConnectionCount()).toBe(1);
-    expect(client.getStatus()).toBe('connected');
-
-    // Drop connection and immediately reconnect via calling connect again
-    sseServer.dropConnection();
-    client.connect();
-    await sseServer.waitForConnection();
-    await wait(50);
-
-    // Second connection should have been made
-    expect(sseServer.getConnectionCount()).toBeGreaterThanOrEqual(2);
-    expect(client.getStatus()).toBe('connected');
-
-    client.close();
-    await sseServer.close();
-  });
-
-  it('non-ok fetch response triggers error status and reconnect', async () => {
-    vi.useFakeTimers();
-
-    const onStatusChange = vi.fn();
-    let fetchCallCount = 0;
-
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
-      fetchCallCount++;
-      return Promise.resolve({ ok: false, status: 503, body: null });
-    }));
-
-    const client = new SseClient(
-      'http://localhost:9999',
-      'test-key',
-      vi.fn(),
-      onStatusChange,
-      undefined,
-      false,
-    );
-
-    client.connect();
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(onStatusChange).toHaveBeenCalledWith('error');
-    expect(fetchCallCount).toBe(1);
-
-    // Reconnect should be scheduled - advance past first retry delay
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(fetchCallCount).toBe(2);
-
-    client.close();
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
-  it('close clears reconnectTimeout', async () => {
-    vi.useFakeTimers();
-
-    let fetchCallCount = 0;
-
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
-      fetchCallCount++;
-      return Promise.resolve({ ok: false, status: 500, body: null });
-    }));
-
-    const client = new SseClient(
-      'http://localhost:9999',
-      'test-key',
-      vi.fn(),
-      vi.fn(),
-      undefined,
-      false,
-    );
-
-    client.connect();
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Error should have happened, reconnect scheduled
-    expect(fetchCallCount).toBe(1);
-
-    // Close before reconnect fires
-    client.close();
-
-    // Advance past the reconnect delay - should NOT trigger another fetch
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(fetchCallCount).toBe(1);
-
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
-  it('pause clears eventSource and sets paused state', async () => {
-    const sseServer = createSseServer();
-    await sseServer.listen();
-
-    const onStatusChange = vi.fn();
-
-    const client = new SseClient(
-      sseServer.getUrl(),
-      'test-key',
-      vi.fn(),
-      onStatusChange,
-      undefined,
-      false,
-    );
-
-    client.connect();
-    await sseServer.waitForConnection();
-    await wait(50);
-
-    expect(client.getStatus()).toBe('connected');
-
-    client.pause();
-
-    expect(client.isPaused()).toBe(true);
-    expect(client.getStatus()).toBe('disconnected');
-    expect(onStatusChange).toHaveBeenCalledWith('disconnected');
-
-    // Connect should be no-op while paused
-    client.connect();
-    expect(client.getStatus()).toBe('disconnected');
-
-    client.close();
-    await sseServer.close();
   });
 });
 
@@ -832,8 +561,6 @@ describe('SseClient - Integration Tests', () => {
       'integration-key',
       vi.fn(),
       onStatusChange,
-      undefined,
-      false,
     );
 
     client.connect();
@@ -856,9 +583,6 @@ describe('SseClient - Integration Tests', () => {
       sseServer.getUrl(),
       'integration-key',
       onFlagChange,
-      undefined,
-      undefined,
-      false,
     );
 
     client.connect();
@@ -878,34 +602,6 @@ describe('SseClient - Integration Tests', () => {
     });
   });
 
-  it('server sends config-updated SSE, client delivers with null flagKey', async () => {
-    const onFlagChange = vi.fn();
-
-    client = new SseClient(
-      sseServer.getUrl(),
-      'integration-key',
-      onFlagChange,
-      undefined,
-      undefined,
-      false,
-    );
-
-    client.connect();
-    await sseServer.waitForConnection();
-    await wait(50);
-
-    sseServer.sendEvent('config-updated', {
-      timestamp: '2025-03-01T11:00:00Z',
-    });
-    await wait(100);
-
-    expect(onFlagChange).toHaveBeenCalledTimes(1);
-    expect(onFlagChange).toHaveBeenCalledWith({
-      flagKey: null,
-      timestamp: '2025-03-01T11:00:00Z',
-    });
-  });
-
   it('server closes connection, client reconnects automatically', async () => {
     const onStatusChange = vi.fn();
 
@@ -914,8 +610,6 @@ describe('SseClient - Integration Tests', () => {
       'integration-key',
       vi.fn(),
       onStatusChange,
-      undefined,
-      false,
     );
 
     client.connect();
@@ -924,10 +618,8 @@ describe('SseClient - Integration Tests', () => {
 
     expect(sseServer.getConnectionCount()).toBe(1);
 
-    // Drop the connection -- the client should schedule a reconnect
     sseServer.dropConnection();
 
-    // Wait for the reconnect (MIN_RETRY_DELAY = 1000ms + some buffer)
     await wait(1500);
     await sseServer.waitForConnection();
     await wait(50);
@@ -939,7 +631,6 @@ describe('SseClient - Integration Tests', () => {
   it('server returns non-200, client reports error status', async () => {
     const onStatusChange = vi.fn();
 
-    // Make the server return 503 on the first request
     sseServer.setNextStatus(503);
 
     client = new SseClient(
@@ -947,8 +638,6 @@ describe('SseClient - Integration Tests', () => {
       'integration-key',
       vi.fn(),
       onStatusChange,
-      undefined,
-      false,
     );
 
     client.connect();

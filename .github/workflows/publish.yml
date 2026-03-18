@@ -5,6 +5,13 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      package:
+        description: 'Package to publish (web-provider or server-provider)'
+        required: true
+        type: choice
+        options:
+          - web-provider
+          - server-provider
       version:
         description: 'Version to publish (e.g., 0.1.0)'
         required: true
@@ -17,7 +24,7 @@ jobs:
     environment: npm
     permissions:
       contents: read
-      id-token: write  # Required for npm provenance / OIDC
+      id-token: write
     steps:
       - uses: actions/checkout@v6
 
@@ -38,15 +45,26 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Set version from tag
-        if: github.event_name == 'release'
+      - name: Publish web-provider
+        if: github.event_name == 'release' || inputs.package == 'web-provider'
+        working-directory: packages/web
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          npm version $VERSION --no-git-tag-version
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            npm version $VERSION --no-git-tag-version
+          else
+            npm version ${{ inputs.version }} --no-git-tag-version
+          fi
+          npm publish --access public
 
-      - name: Set version from input
-        if: github.event_name == 'workflow_dispatch'
-        run: npm version ${{ inputs.version }} --no-git-tag-version
-
-      - name: Publish to npm
-        run: npm publish --access public
+      - name: Publish server-provider
+        if: github.event_name == 'release' || inputs.package == 'server-provider'
+        working-directory: packages/server
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            npm version $VERSION --no-git-tag-version
+          else
+            npm version ${{ inputs.version }} --no-git-tag-version
+          fi
+          npm publish --access public
