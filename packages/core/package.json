@@ -16,6 +16,12 @@
   "files": [
     "dist"
   ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/flipswitch-io/js-sdk.git",
+    "directory": "packages/core"
+  },
   "scripts": {
     "build": "tsup",
     "test": "vitest run",

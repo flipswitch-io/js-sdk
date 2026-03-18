@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FlipswitchProvider, FlagEvaluation, SseConnectionStatus } from '@flipswitch-io/sdk';
+import { FlipswitchWebProvider, type FlagEvaluation, type SseConnectionStatus } from '@flipswitch-io/web-provider';
 
 // Dark mode color palette (matching Flipswitch frontend)
 const colors = {
@@ -36,7 +36,7 @@ function App() {
   const [flags, setFlags] = useState<FlagEvaluation[]>([]);
   const [sseStatus, setSseStatus] = useState<SseConnectionStatus>('disconnected');
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
-  const providerRef = useRef<FlipswitchProvider | null>(null);
+  const providerRef = useRef<FlipswitchWebProvider | null>(null);
 
   const loadFlags = useCallback(async () => {
     if (!providerRef.current) return;
@@ -68,7 +68,7 @@ function App() {
     setIsConnecting(true);
     setError(null);
 
-    const provider = new FlipswitchProvider({ apiKey: apiKey.trim() });
+    const provider = new FlipswitchWebProvider({ apiKey: apiKey.trim() });
     provider.on('flagChange', (event: { flagKey: string | null }) => {
       handleFlagChange(event.flagKey);
     });
