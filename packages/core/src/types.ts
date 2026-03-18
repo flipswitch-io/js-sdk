@@ -1,7 +1,7 @@
 /**
- * Configuration options for the Flipswitch provider.
+ * Base configuration options shared between web and server providers.
  */
-export interface FlipswitchOptions {
+export interface FlipswitchBaseOptions {
   /**
    * The API key for your environment.
    * Obtain this from your Flipswitch dashboard.
@@ -27,30 +27,6 @@ export interface FlipswitchOptions {
    * Useful for testing or custom networking needs.
    */
   fetchImplementation?: typeof fetch;
-
-  /**
-   * Persist flag values to localStorage (browser only).
-   * When enabled, flag values are cached in localStorage and used
-   * as fallback when offline or during initial load.
-   * @default true (in browser environments)
-   */
-  persistCache?: boolean;
-
-  /**
-   * Enable offline mode support.
-   * When enabled, the provider will detect offline state and serve
-   * cached values without attempting network requests.
-   * @default true (in browser environments)
-   */
-  offlineMode?: boolean;
-
-  /**
-   * Enable visibility API integration (browser only).
-   * When enabled, SSE connection is paused when the tab is hidden
-   * and resumed when it becomes visible, saving resources.
-   * @default true (in browser environments)
-   */
-  enableVisibilityHandling?: boolean;
 
   /**
    * Enable polling fallback when SSE fails.
@@ -124,8 +100,7 @@ export type FlagEvent =
   | { type: 'api-key-rotated'; data: ApiKeyRotatedEvent };
 
 /**
- * @deprecated Use FlagUpdatedEvent or ConfigUpdatedEvent instead.
- * Event emitted when a flag changes (legacy format).
+ * Event emitted when a flag changes.
  */
 export interface FlagChangeEvent {
   /**

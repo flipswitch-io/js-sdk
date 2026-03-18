@@ -12,7 +12,9 @@ const MAX_RETRY_DELAY = 30000;
 /**
  * SSE client for real-time flag change notifications.
  * Handles automatic reconnection with exponential backoff.
- * Includes visibility API integration for browser environments.
+ *
+ * Visibility handling is NOT built in — callers should use
+ * pause() / resume() externally when the tab becomes hidden/visible.
  */
 export class SseClient {
   private eventSource: EventSource | null = null;
@@ -21,7 +23,6 @@ export class SseClient {
   private closed = false;
   private paused = false;
   private status: SseConnectionStatus = 'disconnected';
-  private visibilityHandler: (() => void) | null = null;
   private abortController: AbortController | null = null;
 
   constructor(
@@ -30,7 +31,6 @@ export class SseClient {
     private readonly onFlagChange: (event: FlagChangeEvent) => void,
     private readonly onStatusChange?: (status: SseConnectionStatus) => void,
     private readonly telemetryHeaders?: Record<string, string>,
-    private readonly enableVisibilityHandling: boolean = true
   ) {}
 
   /**
@@ -49,30 +49,14 @@ export class SseClient {
       this.eventSource.close();
     }
 
-    // Setup visibility handling for browser environments
-    if (this.enableVisibilityHandling) {
-      this.setupVisibilityHandling();
-    }
-
     this.updateStatus('connecting');
 
     // Build the SSE URL
     const url = `${this.baseUrl}/api/v1/flags/events`;
 
-    // Create EventSource
-    // Note: EventSource doesn't support custom headers natively.
-    // We use a polyfill approach by passing the API key as a query param
-    // or using EventSource polyfill that supports headers.
-    // For now, we'll use the native EventSource with a workaround.
     try {
-      // Check if we're in a browser environment with native EventSource
-      if (typeof EventSource !== 'undefined') {
-        // Use fetch-event-source pattern for header support
-        this.connectWithFetch(url);
-      } else {
-        // Node.js environment - use polyfill
-        this.connectWithPolyfill(url);
-      }
+      // Use fetch-based SSE for header support
+      this.connectWithFetch(url);
     } catch (error) {
       console.warn('[Flipswitch] Failed to establish SSE connection:', error);
       this.updateStatus('error');
@@ -81,28 +65,8 @@ export class SseClient {
   }
 
   /**
-   * Setup visibility API handling.
-   * Disconnects when tab is hidden, reconnects when visible.
-   */
-  private setupVisibilityHandling(): void {
-    if (typeof document === 'undefined' || this.visibilityHandler) return;
-
-    this.visibilityHandler = () => {
-      if (document.hidden) {
-        // Tab is hidden, pause the connection to save resources
-        this.pause();
-      } else {
-        // Tab is visible, resume the connection
-        this.resume();
-      }
-    };
-
-    document.addEventListener('visibilitychange', this.visibilityHandler);
-  }
-
-  /**
-   * Pause the SSE connection (used by visibility API).
-   * Different from close() - can be resumed.
+   * Pause the SSE connection.
+   * Different from close() — can be resumed.
    */
   pause(): void {
     if (this.paused || this.closed) return;
@@ -231,27 +195,15 @@ export class SseClient {
   }
 
   /**
-   * Connect using native EventSource (for environments that support it).
-   * Note: This requires server-side support for API key in query params.
-   */
-  private connectWithPolyfill(url: string): void {
-    // For Node.js, we'd need to use a library like 'eventsource'
-    // For now, fall back to fetch-based approach
-    this.connectWithFetch(url);
-  }
-
-  /**
    * Handle incoming SSE events.
    */
   private handleEvent(eventType: string, data: string): void {
     if (eventType === 'heartbeat') {
-      // Heartbeat received, connection is alive
       return;
     }
 
     try {
       if (eventType === 'flag-updated') {
-        // Single flag was modified
         const parsed: FlagUpdatedEvent = JSON.parse(data);
         const event: FlagChangeEvent = {
           flagKey: parsed.flagKey,
@@ -259,7 +211,6 @@ export class SseClient {
         };
         this.onFlagChange(event);
       } else if (eventType === 'config-updated') {
-        // Configuration changed, always refresh all flags
         const parsed: ConfigUpdatedEvent = JSON.parse(data);
         const event: FlagChangeEvent = {
           flagKey: null, // null indicates all flags should be refreshed
@@ -267,7 +218,6 @@ export class SseClient {
         };
         this.onFlagChange(event);
       } else if (eventType === 'api-key-rotated') {
-        // API key was rotated or rotation was aborted
         const parsed: ApiKeyRotatedEvent = JSON.parse(data);
         if (!parsed.validUntil) {
           console.info('[Flipswitch] API key rotation was aborted');
@@ -276,7 +226,6 @@ export class SseClient {
             `[Flipswitch] API key was rotated. Current key valid until: ${parsed.validUntil}`
           );
         }
-        // No cache invalidation - this is just informational
       }
     } catch (error) {
       console.error(`[Flipswitch] Failed to parse ${eventType} event:`, error);
@@ -323,12 +272,6 @@ export class SseClient {
   close(): void {
     this.closed = true;
     this.updateStatus('disconnected');
-
-    // Clean up visibility handler
-    if (this.visibilityHandler && typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', this.visibilityHandler);
-      this.visibilityHandler = null;
-    }
 
     // Abort current connection
     if (this.abortController) {

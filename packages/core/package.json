@@ -1,0 +1,41 @@
+{
+  "name": "@flipswitch-io/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared core for Flipswitch OpenFeature providers",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/flipswitch-io/js-sdk.git",
+    "directory": "packages/core"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@openfeature/core": "^1.6.0"
+  },
+  "devDependencies": {
+    "@openfeature/core": "^1.6.0",
+    "@types/node": "^24.0.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.0"
+  }
+}

@@ -1,23 +1,17 @@
 /**
- * Flipswitch JavaScript SDK Demo
+ * Flipswitch Server Provider Demo
  *
  * Run this demo with:
- *   npm run demo -- <your-api-key> [base-url]
- *
- * Or directly:
- *   npx tsx examples/demo.ts <your-api-key> [base-url]
- *
- * Or set the FLIPSWITCH_BASE_URL environment variable:
- *   FLIPSWITCH_BASE_URL=http://localhost:8080 npm run demo -- <your-api-key>
+ *   npx tsx packages/server/examples/demo.ts <your-api-key> [base-url]
  */
 
-import { FlipswitchProvider, FlagEvaluation } from '../src';
+import { FlipswitchServerProvider, type FlagEvaluation, formatValue } from '../src';
 
 const apiKey = process.argv[2];
 const baseUrl = process.argv[3] || process.env.FLIPSWITCH_BASE_URL;
 
 if (!apiKey) {
-  console.error('Usage: npm run demo -- <api-key> [base-url]');
+  console.error('Usage: npx tsx packages/server/examples/demo.ts <api-key> [base-url]');
   console.error('       Or set FLIPSWITCH_BASE_URL environment variable');
   process.exit(1);
 }
@@ -30,11 +24,11 @@ const context = {
   country: 'SE',
 };
 
-let provider: FlipswitchProvider;
+let provider: FlipswitchServerProvider;
 
 function printFlag(flag: FlagEvaluation) {
   const variant = flag.variant ? `, variant=${flag.variant}` : '';
-  console.log(`  ${flag.key.padEnd(30)} (${flag.valueType}) = ${provider.formatValue(flag.value)}`);
+  console.log(`  ${flag.key.padEnd(30)} (${flag.valueType}) = ${formatValue(flag.value)}`);
   console.log(`    └─ reason=${flag.reason}${variant}`);
 }
 
@@ -55,15 +49,15 @@ async function printAllFlags() {
 }
 
 async function main() {
-  console.log('Flipswitch JavaScript SDK Demo');
-  console.log('==============================\n');
+  console.log('Flipswitch Server Provider Demo');
+  console.log('===============================\n');
 
   if (baseUrl) {
     console.log(`Using base URL: ${baseUrl}`);
   }
 
-  // Create provider - only API key is required
-  provider = new FlipswitchProvider({ apiKey, baseUrl });
+  // Create server provider
+  provider = new FlipswitchServerProvider({ apiKey, baseUrl });
 
   // Subscribe to flag changes
   provider.on('flagChange', async (event) => {
@@ -71,13 +65,11 @@ async function main() {
     console.log(`\n*** Flag changed: ${flagKey ?? 'all flags'} ***`);
 
     if (flagKey) {
-      // Re-evaluate the specific flag that changed
       const flag = await provider.evaluateFlag(flagKey, context);
       if (flag) {
         printFlag(flag);
       }
     } else {
-      // Bulk invalidation - re-evaluate all flags
       await printAllFlags();
     }
     console.log();
