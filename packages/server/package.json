@@ -1,6 +1,6 @@
 {
   "name": "@flipswitch-io/server-provider",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Flipswitch OpenFeature server provider with real-time SSE support",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -37,7 +37,6 @@
     "directory": "packages/server"
   },
   "dependencies": {
-    "@flipswitch-io/core": "*",
     "@openfeature/ofrep-provider": "^0.2.2",
     "@openfeature/ofrep-core": "^2.0.0"
   },
