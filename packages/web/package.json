@@ -48,7 +48,7 @@
     "@openfeature/web-sdk": "^1.7.2",
     "@types/node": "^24.0.0",
     "tsup": "^8.0.1",
-    "typescript": "^5.3.0",
+    "typescript": "^6.0.0",
     "vitest": "^4.0.0"
   }
 }
