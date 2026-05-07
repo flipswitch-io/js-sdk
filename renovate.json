@@ -4,6 +4,7 @@
   "labels": ["dependencies"],
   "prConcurrentLimit": 10,
   "prHourlyLimit": 0,
+  "ignorePaths": ["**/node_modules/**"],
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch"],
