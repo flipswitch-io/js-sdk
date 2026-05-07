@@ -1,6 +1,8 @@
 # Flipswitch JavaScript SDKs
 
 [![CI](https://github.com/flipswitch-io/js-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/flipswitch-io/js-sdk/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![OpenFeature](https://img.shields.io/badge/OpenFeature-compatible-blue)](https://openfeature.dev)
 
 Flipswitch OpenFeature providers for JavaScript/TypeScript with real-time SSE support.
 
